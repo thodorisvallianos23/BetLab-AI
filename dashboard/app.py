@@ -82,9 +82,25 @@ def predict_match(home_team, away_team):
 
 st.set_page_config(page_title="BetLab AI", layout="wide")
 
-st.title("⚽ BetLab AI")
-st.subheader("Football Analytics & Value Betting Dashboard")
+st.title("⚽ BetLab AI Pro")
 
+st.markdown("""
+### AI Football Analytics Platform
+
+**Developer:** Thodoris Vallianos
+
+Powered by:
+- 📊 Statistical Models
+- ⚽ Poisson Goal Engine
+- 💰 Value Betting Engine
+- 🤖 AI Decision Support
+""")
+
+st.divider()
+
+st.caption(
+    "BetLab AI Pro v0.1 • © 2026 • Developed by Thodoris Vallianos"
+)
 teams = get_teams()
 
 col1, col2 = st.columns(2)
