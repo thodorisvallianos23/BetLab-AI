@@ -11,7 +11,7 @@ from dashboard.sidebar import render_analyzer_controls
 from dashboard.top_nav import render_top_nav
 from models.prediction_engine import fair_odds, predict_match
 from models.value_engine import analyze_market
-from dashboard.today_picks import render_today_picks
+
 DB_PATH = Path("data/betlab_v2.db")
 
 
@@ -212,15 +212,12 @@ render_top_nav()
 
 teams = get_teams()
 
-tab1, tab2, tab3 = st.tabs(["🔥 Today's Picks", "🔍 Analyzer", "📒 Bet Tracker"])
+tab1, tab2 = st.tabs(["🔍 Analyzer", "📒 Bet Tracker"])
 
 with tab1:
-    render_today_picks()
-
-with tab2:
     render_analyzer_page(teams)
 
-with tab3:
+with tab2:
     render_bet_tracker()
 
 st.divider()
