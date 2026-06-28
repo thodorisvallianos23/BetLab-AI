@@ -58,5 +58,24 @@ def get_all_bets():
     bets = cursor.fetchall()
 
     conn.close()
+def update_bet_result(bet_id, result, profit_loss):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
+    cursor.execute(
+        """
+        UPDATE bets
+        SET result = ?,
+            profit_loss = ?
+        WHERE id = ?
+        """,
+        (
+            result,
+            profit_loss,
+            bet_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
     return bets
