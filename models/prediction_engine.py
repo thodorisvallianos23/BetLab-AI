@@ -31,9 +31,8 @@ def match_outcome_probabilities(home_xg, away_xg, max_goals=6):
 
     for home_goals in range(max_goals + 1):
         for away_goals in range(max_goals + 1):
-            prob = (
-                poisson_probability(home_xg, home_goals)
-                * poisson_probability(away_xg, away_goals)
+            prob = poisson_probability(home_xg, home_goals) * poisson_probability(
+                away_xg, away_goals
             )
 
             if home_goals > away_goals:
@@ -58,15 +57,39 @@ def btts_probability(home_xg, away_xg):
     return 1 - home_no_goal - away_no_goal + both_no_goal
 
 
+def correct_score_matrix(home_xg, away_xg, max_goals=6):
+    scores = []
+
+    for home_goals in range(max_goals + 1):
+        for away_goals in range(max_goals + 1):
+            prob = poisson_probability(home_xg, home_goals) * poisson_probability(
+                away_xg, away_goals
+            )
+
+            scores.append(
+                {
+                    "score": f"{home_goals}-{away_goals}",
+                    "probability": prob,
+                    "fair_odds": fair_odds(prob),
+                }
+            )
+
+    scores.sort(key=lambda x: x["probability"], reverse=True)
+    return scores
+
+
 def get_team_rating(team_name):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT attack_rating, defence_rating
         FROM teams
         WHERE team_name = ?
-    """, (team_name,))
+        """,
+        (team_name,),
+    )
 
     result = cursor.fetchone()
     conn.close()
@@ -86,13 +109,16 @@ def get_recent_form(team_name, limit=5):
 
     team_id = team[0]
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT home_team_id, away_team_id, home_goals, away_goals
         FROM matches
         WHERE home_team_id = ? OR away_team_id = ?
         ORDER BY match_date DESC
         LIMIT ?
-    """, (team_id, team_id, limit))
+        """,
+        (team_id, team_id, limit),
+    )
 
     matches = cursor.fetchall()
     conn.close()
@@ -145,17 +171,19 @@ def predict_match(home_team, away_team):
 
     home_xg = max(
         0.2,
-        (home_attack / 50) * (100 - away_defence) / 50 + 0.35 + form_boost
+        (home_attack / 50) * (100 - away_defence) / 50 + 0.35 + form_boost,
     )
 
     away_xg = max(
         0.2,
-        (away_attack / 50) * (100 - home_defence) / 50 - form_boost
+        (away_attack / 50) * (100 - home_defence) / 50 - form_boost,
     )
 
     total_xg = home_xg + away_xg
+
     outcome_probs = match_outcome_probabilities(home_xg, away_xg)
     btts = btts_probability(home_xg, away_xg)
+    scores = correct_score_matrix(home_xg, away_xg)
 
     return {
         "home_xg": home_xg,
@@ -177,4 +205,5 @@ def predict_match(home_team, away_team):
         "fair_o15": fair_odds(over_probability(total_xg, 1.5)),
         "fair_o25": fair_odds(over_probability(total_xg, 2.5)),
         "fair_o35": fair_odds(over_probability(total_xg, 3.5)),
+        "correct_scores": scores[:10],
     }

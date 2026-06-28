@@ -103,19 +103,36 @@ if st.button("Predict Match"):
         f"{prediction['away_win'] * 100:.2f}%",
         f"Fair: {prediction['fair_away_win']:.2f}",
     )
+
     st.write("### BTTS Probability")
 
     btts_col1, btts_col2 = st.columns(2)
 
     btts_col1.metric(
-    "🤝 Both Teams To Score",
-    f"{prediction['btts'] * 100:.2f}%"
-)
+        "🤝 Both Teams To Score",
+        f"{prediction['btts'] * 100:.2f}%",
+    )
 
     btts_col2.metric(
-    "Fair Odds BTTS",
-    f"{prediction['fair_btts']:.2f}"
-)
+        "Fair Odds BTTS",
+        f"{prediction['fair_btts']:.2f}",
+    )
+
+    st.write("### 🎯 Top 10 Correct Scores")
+
+    score_rows = []
+
+    for score in prediction["correct_scores"]:
+        score_rows.append(
+            {
+                "Score": score["score"],
+                "Probability": f"{score['probability'] * 100:.2f}%",
+                "Fair Odds": f"{score['fair_odds']:.2f}",
+            }
+        )
+
+    st.table(score_rows)
+
     st.write("### Over Goals Probabilities")
 
     st.write(
