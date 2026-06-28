@@ -3,28 +3,11 @@ import sqlite3
 from pathlib import Path
 
 import streamlit as st
+import sys
 
+sys.path.append(".")
+from models.prediction_engine import predict_match, fair_odds
 DB_PATH = Path("data/betlab_v2.db")
-
-
-def poisson_probability(lam, goals):
-    return (math.exp(-lam) * lam**goals) / math.factorial(goals)
-
-
-def over_probability(total_xg, line):
-    max_goals = int(line)
-    under_or_equal = sum(
-        poisson_probability(total_xg, goals)
-        for goals in range(max_goals + 1)
-    )
-    return 1 - under_or_equal
-
-
-def fair_odds(probability):
-    if probability <= 0:
-        return 0
-    return 1 / probability
-
 
 def get_teams():
     conn = sqlite3.connect(DB_PATH)
@@ -54,11 +37,6 @@ def get_team_rating(team_name):
     result = cursor.fetchone()
     conn.close()
     return result
-
-
-def predict_match(home_team, away_team):
-    home = get_team_rating(home_team)
-    away = get_team_rating(away_team)
 
     if not home or not away:
         return None
