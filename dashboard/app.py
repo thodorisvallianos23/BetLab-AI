@@ -1,13 +1,14 @@
-import math
 import sqlite3
+import sys
 from pathlib import Path
 
 import streamlit as st
-import sys
 
 sys.path.append(".")
 from models.prediction_engine import predict_match, fair_odds
+
 DB_PATH = Path("data/betlab_v2.db")
+
 
 def get_teams():
     conn = sqlite3.connect(DB_PATH)
@@ -22,40 +23,6 @@ def get_teams():
     teams = [row[0] for row in cursor.fetchall()]
     conn.close()
     return teams
-
-
-def get_team_rating(team_name):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT attack_rating, defence_rating
-        FROM teams
-        WHERE team_name = ?
-    """, (team_name,))
-
-    result = cursor.fetchone()
-    conn.close()
-    return result
-
-    if not home or not away:
-        return None
-
-    home_attack, home_defence = home
-    away_attack, away_defence = away
-
-    home_xg = max(0.2, (home_attack / 50) * (100 - away_defence) / 50 + 0.35)
-    away_xg = max(0.2, (away_attack / 50) * (100 - home_defence) / 50)
-    total_xg = home_xg + away_xg
-
-    return {
-        "home_xg": home_xg,
-        "away_xg": away_xg,
-        "total_xg": total_xg,
-        "over_15": over_probability(total_xg, 1.5),
-        "over_25": over_probability(total_xg, 2.5),
-        "over_35": over_probability(total_xg, 3.5),
-    }
 
 
 st.set_page_config(page_title="BetLab AI", layout="wide")
@@ -76,9 +43,6 @@ Powered by:
 
 st.divider()
 
-st.caption(
-    "BetLab AI Pro v0.1 • © 2026 • Developed by Thodoris Vallianos"
-)
 teams = get_teams()
 
 col1, col2 = st.columns(2)
@@ -118,6 +82,40 @@ if st.button("Predict Match"):
     c2.metric("Away xG", f"{prediction['away_xg']:.2f}")
     c3.metric("Total xG", f"{prediction['total_xg']:.2f}")
 
+    st.write("### Match Outcome Probabilities")
+
+    m1, mx, m2 = st.columns(3)
+
+    m1.metric(
+        "🏠 Home Win",
+        f"{prediction['home_win'] * 100:.2f}%",
+        f"Fair: {prediction['fair_home_win']:.2f}",
+    )
+
+    mx.metric(
+        "🤝 Draw",
+        f"{prediction['draw'] * 100:.2f}%",
+        f"Fair: {prediction['fair_draw']:.2f}",
+    )
+
+    m2.metric(
+        "✈️ Away Win",
+        f"{prediction['away_win'] * 100:.2f}%",
+        f"Fair: {prediction['fair_away_win']:.2f}",
+    )
+    st.write("### BTTS Probability")
+
+    btts_col1, btts_col2 = st.columns(2)
+
+    btts_col1.metric(
+    "🤝 Both Teams To Score",
+    f"{prediction['btts'] * 100:.2f}%"
+)
+
+    btts_col2.metric(
+    "Fair Odds BTTS",
+    f"{prediction['fair_btts']:.2f}"
+)
     st.write("### Over Goals Probabilities")
 
     st.write(
@@ -154,3 +152,7 @@ if st.button("Predict Match"):
         st.warning("👀 WATCH - Small value")
     else:
         st.error("❌ PASS - No value")
+
+st.divider()
+
+st.caption("BetLab AI Pro v0.1 • © 2026 • Developed by Thodoris Vallianos")

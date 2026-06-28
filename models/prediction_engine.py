@@ -24,6 +24,40 @@ def fair_odds(probability):
     return 1 / probability
 
 
+def match_outcome_probabilities(home_xg, away_xg, max_goals=6):
+    home_win = 0
+    draw = 0
+    away_win = 0
+
+    for home_goals in range(max_goals + 1):
+        for away_goals in range(max_goals + 1):
+            prob = (
+                poisson_probability(home_xg, home_goals)
+                * poisson_probability(away_xg, away_goals)
+            )
+
+            if home_goals > away_goals:
+                home_win += prob
+            elif home_goals == away_goals:
+                draw += prob
+            else:
+                away_win += prob
+
+    return {
+        "home_win": home_win,
+        "draw": draw,
+        "away_win": away_win,
+    }
+
+
+def btts_probability(home_xg, away_xg):
+    home_no_goal = poisson_probability(home_xg, 0)
+    away_no_goal = poisson_probability(away_xg, 0)
+    both_no_goal = home_no_goal * away_no_goal
+
+    return 1 - home_no_goal - away_no_goal + both_no_goal
+
+
 def get_team_rating(team_name):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -120,6 +154,8 @@ def predict_match(home_team, away_team):
     )
 
     total_xg = home_xg + away_xg
+    outcome_probs = match_outcome_probabilities(home_xg, away_xg)
+    btts = btts_probability(home_xg, away_xg)
 
     return {
         "home_xg": home_xg,
@@ -127,6 +163,14 @@ def predict_match(home_team, away_team):
         "total_xg": total_xg,
         "home_form": home_form,
         "away_form": away_form,
+        "home_win": outcome_probs["home_win"],
+        "draw": outcome_probs["draw"],
+        "away_win": outcome_probs["away_win"],
+        "fair_home_win": fair_odds(outcome_probs["home_win"]),
+        "fair_draw": fair_odds(outcome_probs["draw"]),
+        "fair_away_win": fair_odds(outcome_probs["away_win"]),
+        "btts": btts,
+        "fair_btts": fair_odds(btts),
         "over_15": over_probability(total_xg, 1.5),
         "over_25": over_probability(total_xg, 2.5),
         "over_35": over_probability(total_xg, 3.5),
