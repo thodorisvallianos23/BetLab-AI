@@ -2,7 +2,8 @@ import pandas as pd
 import streamlit as st
 
 from services.bankroll_service import get_bankroll, set_starting_balance
-from services.bet_service import get_all_bets, save_bet, update_bet_result
+from services.bet_service import get_all_bets, save_bet, settle_bet
+from services.tracker_stats import calculate_tracker_stats
 
 
 def render_bet_tracker():
@@ -15,13 +16,18 @@ def render_bet_tracker():
     else:
         starting_balance, current_balance, currency = 1000.0, 1000.0, "EUR"
 
-    profit = current_balance - starting_balance
-    roi = (profit / starting_balance) * 100 if starting_balance > 0 else 0
+    bets = get_all_bets()
+    stats = calculate_tracker_stats(starting_balance, current_balance, bets)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("💰 Current Balance", f"{currency} {current_balance:.2f}")
-    c2.metric("📈 Profit/Loss", f"{currency} {profit:.2f}")
-    c3.metric("📊 ROI", f"{roi:.2f}%")
+    c2.metric("📈 Profit/Loss", f"{currency} {stats['profit']:.2f}")
+    c3.metric("📊 ROI", f"{stats['roi']:.2f}%")
+
+    c4, c5, c6 = st.columns(3)
+    c4.metric("🎯 Total Bets", stats["total_bets"])
+    c5.metric("⏳ Pending", stats["pending_bets"])
+    c6.metric("🏆 Win Rate", f"{stats['win_rate']:.2f}%")
 
     with st.expander("⚙️ Bankroll Settings"):
         new_balance = st.number_input(
@@ -33,7 +39,8 @@ def render_bet_tracker():
 
         if st.button("Update Starting Balance"):
             set_starting_balance(new_balance)
-            st.success("✅ Balance updated. Refresh the page.")
+            st.success("✅ Balance updated.")
+            st.rerun()
 
     st.divider()
 
@@ -42,10 +49,7 @@ def render_bet_tracker():
             bet_date = st.date_input("Bet Date")
             match_name = st.text_input("Match")
             market = st.text_input("Market")
-            selection = st.selectbox(
-           "Selection",
-            ["Yes", "No"],
-)
+            selection = st.selectbox("Selection", ["Yes", "No"])
             bookmaker = st.text_input("Bookmaker")
             odds = st.number_input("Odds", min_value=1.01, value=1.80, step=0.01)
             stake = st.number_input("Stake", min_value=0.0, value=10.0, step=1.0)
@@ -63,12 +67,11 @@ def render_bet_tracker():
                     stake,
                 )
                 st.success("✅ Bet saved")
+                st.rerun()
 
     st.divider()
 
     st.subheader("📋 Bet History")
-
-    bets = get_all_bets()
 
     if bets:
         df = pd.DataFrame(
@@ -91,15 +94,11 @@ def render_bet_tracker():
 
         st.subheader("✅ Update Bet Result")
 
-        bet_id = st.number_input(
-            "Bet ID",
-            min_value=1,
-            step=1,
-        )
+        bet_id = st.number_input("Bet ID", min_value=1, step=1)
 
         result = st.selectbox(
             "Result",
-            ["Pending", "Won", "Lost", "Push"],
+            ["Won", "Lost", "Push"],
         )
 
         if st.button("Update Result"):
@@ -108,17 +107,12 @@ def render_bet_tracker():
             if selected_bet.empty:
                 st.error("Bet ID not found.")
             else:
-                odds = float(selected_bet.iloc[0]["Odds"])
-                stake = float(selected_bet.iloc[0]["Stake"])
+                success = settle_bet(bet_id, result)
 
-                if result == "Won":
-                    profit_loss = stake * (odds - 1)
-                elif result == "Lost":
-                    profit_loss = -stake
+                if success:
+                    st.success("✅ Bet settled successfully.")
+                    st.rerun()
                 else:
-                    profit_loss = 0
-
-                update_bet_result(bet_id, result, profit_loss)
-                st.success("✅ Bet result updated. Refresh the page.")
+                    st.error("This bet has already been settled or does not exist.")
     else:
         st.info("No bets saved yet.")
