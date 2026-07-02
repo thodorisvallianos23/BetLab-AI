@@ -41,15 +41,24 @@ def get_today_fixtures():
     fixtures = []
 
     for match in data.get("matches", []):
+
+        home_team = match.get("homeTeam", {}).get("name")
+        away_team = match.get("awayTeam", {}).get("name")
+
+        # Αγνοούμε fixtures που δεν έχουν ακόμα οριστεί
+        if not home_team or not away_team:
+            continue
+
         fixtures.append(
             {
                 "date": match["utcDate"][:10],
                 "league": match["competition"]["name"],
-                "home_team": match["homeTeam"]["name"],
-                "away_team": match["awayTeam"]["name"],
+                "home_team": home_team,
+                "away_team": away_team,
+                "status": match["status"],
             }
         )
 
-    print(f"✅ Loaded {len(fixtures)} fixtures")
+    print(f"✅ Loaded {len(fixtures)} valid fixtures")
 
     return fixtures
