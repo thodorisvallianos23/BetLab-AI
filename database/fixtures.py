@@ -11,6 +11,7 @@ def create_fixtures_table():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS fixtures (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        api_fixture_id INTEGER UNIQUE,
         fixture_date TEXT NOT NULL,
         league TEXT,
         home_team TEXT NOT NULL,

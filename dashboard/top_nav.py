@@ -37,14 +37,6 @@ def render_top_nav():
             </div>
         </div>
 
-        <div style="display:flex;gap:26px;font-weight:700;color:#374151;">
-            <span>🔥 Today's Picks</span>
-            <span>🔍 Analyzer</span>
-            <span>📒 Bet Tracker</span>
-            <span>📊 Insights</span>
-            <span>⚙️ Settings</span>
-        </div>
-
         <div style="display:flex;align-items:center;gap:22px;">
             <div style="
                 padding:12px 18px;

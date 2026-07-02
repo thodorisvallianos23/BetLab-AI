@@ -8,6 +8,7 @@ sys.path.append(".")
 
 from dashboard.analyzer import render_analyzer_page
 from dashboard.bet_tracker import render_bet_tracker
+from dashboard.home import render_home
 from dashboard.today_picks import render_today_picks
 from dashboard.top_nav import render_top_nav
 
@@ -29,16 +30,28 @@ render_top_nav()
 
 teams = get_teams()
 
-tab1, tab2, tab3 = st.tabs(["🔥 Today's Picks", "🔍 Analyzer", "📒 Bet Tracker"])
+page = st.segmented_control(
+    "Navigation",
+    ["🏠 Home", "🔥 Today's Picks", "🔍 Analyzer", "📒 Bet Tracker", "📊 Insights", "⚙️ Settings"],
+    label_visibility="collapsed",
+)
 
-with tab1:
+st.divider()
+
+if page == "🏠 Home":
+    render_home()
+elif page == "🔥 Today's Picks":
     render_today_picks()
-
-with tab2:
+elif page == "🔍 Analyzer":
     render_analyzer_page(teams)
-
-with tab3:
+elif page == "📒 Bet Tracker":
     render_bet_tracker()
+elif page == "📊 Insights":
+    st.info("📊 Insights page coming soon.")
+elif page == "⚙️ Settings":
+    st.info("⚙️ Settings page coming soon.")
+else:
+    render_home()
 
 st.divider()
 st.caption("BetLab AI Pro v0.2 • © 2026 • Developed by Thodoris Vallianos")

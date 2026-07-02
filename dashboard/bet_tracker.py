@@ -3,6 +3,7 @@ import streamlit as st
 
 from services.bankroll_service import get_bankroll, set_starting_balance
 from services.bet_service import get_all_bets, save_bet, settle_bet
+from services.bookmaker_service import add_bookmaker, get_bookmakers
 from services.tracker_stats import calculate_tracker_stats
 
 
@@ -45,12 +46,29 @@ def render_bet_tracker():
     st.divider()
 
     with st.expander("➕ Add Bet", expanded=False):
+        new_bookmaker = st.text_input("Add New Bookmaker")
+
+        if st.button("Save New Bookmaker"):
+            if new_bookmaker.strip():
+                add_bookmaker(new_bookmaker.strip())
+                st.success("✅ Bookmaker added.")
+                st.rerun()
+            else:
+                st.error("Write a bookmaker name first.")
+
         with st.form("bet_tracker_form"):
             bet_date = st.date_input("Bet Date")
             match_name = st.text_input("Match")
             market = st.text_input("Market")
             selection = st.selectbox("Selection", ["Yes", "No"])
-            bookmaker = st.text_input("Bookmaker")
+
+            bookmakers = get_bookmakers()
+
+            bookmaker = st.selectbox(
+                "Bookmaker",
+                bookmakers,
+            )
+
             odds = st.number_input("Odds", min_value=1.01, value=1.80, step=0.01)
             stake = st.number_input("Stake", min_value=0.0, value=10.0, step=1.0)
 
