@@ -108,6 +108,9 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
         if odds <= 1:
             continue
 
+        if fair_odds > 0 and odds > fair_odds * 2:
+            continue
+
         implied_probability = 1 / odds
         edge = model_probability - implied_probability
 

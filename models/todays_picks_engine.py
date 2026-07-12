@@ -1,11 +1,11 @@
+from models.prediction_engine import predict_match
 from services.football_api import get_today_fixtures
 from services.odds_api import (
-    get_live_odds,
+    compare_odds_with_model,
     extract_match_odds,
     extract_totals_odds,
-    compare_odds_with_model,
+    get_live_odds,
 )
-from models.prediction_engine import predict_match
 
 
 TEAM_NAME_MAP = {
@@ -41,14 +41,62 @@ def explain_pick(prediction):
 
 
 def find_odds_event(live_odds, home_team, away_team):
-    home_team = normalize_team_name(home_team)
-    away_team = normalize_team_name(away_team)
+    normalized_home = normalize_team_name(home_team)
+    normalized_away = normalize_team_name(away_team)
 
     for event in live_odds:
-        if event.get("home_team") == home_team and event.get("away_team") == away_team:
+        event_home = event.get("home_team")
+        event_away = event.get("away_team")
+
+        if event_home == normalized_home and event_away == normalized_away:
             return event
 
     return None
+
+
+def get_market_odds(event, best_bet, prediction, home_team):
+    market = best_bet["market"]
+
+    if market == "Over 1.5":
+        return (
+            extract_totals_odds(
+                event,
+                point=1.5,
+                outcome_name="Over",
+            ),
+            prediction["over_15"],
+        )
+
+    if market == "Over 2.5":
+        return (
+            extract_totals_odds(
+                event,
+                point=2.5,
+                outcome_name="Over",
+            ),
+            prediction["over_25"],
+        )
+
+    if market == "Over 3.5":
+        return (
+            extract_totals_odds(
+                event,
+                point=3.5,
+                outcome_name="Over",
+            ),
+            prediction["over_35"],
+        )
+
+    if market == "Home Win":
+        return (
+            extract_match_odds(
+                event,
+                normalize_team_name(home_team),
+            ),
+            prediction["home_win"],
+        )
+
+    return [], best_bet["probability"]
 
 
 def get_todays_picks(limit=3):
@@ -72,25 +120,24 @@ def get_todays_picks(limit=3):
         value_percent = 0
         is_value = False
 
-        event = find_odds_event(live_odds, home_team, away_team)
+        event = find_odds_event(
+            live_odds,
+            home_team,
+            away_team,
+        )
 
         if event:
-            if best_bet["market"] == "Over 2.5":
-                odds_rows = extract_totals_odds(event, point=2.5, outcome_name="Over")
-                model_prob = prediction["over_25"]
+            odds_rows, model_probability = get_market_odds(
+                event,
+                best_bet,
+                prediction,
+                home_team,
+            )
 
-            elif best_bet["market"] == "Over 1.5":
-                odds_rows = extract_totals_odds(event, point=2.5, outcome_name="Over")
-                model_prob = prediction["over_25"]
-
-            else:
-                odds_rows = extract_match_odds(
-                    event,
-                    normalize_team_name(home_team),
-                )
-                model_prob = prediction["home_win"]
-
-            value_rows = compare_odds_with_model(model_prob, odds_rows)
+            value_rows = compare_odds_with_model(
+                model_probability,
+                odds_rows,
+            )
 
             if value_rows:
                 best_value = value_rows[0]
@@ -117,5 +164,12 @@ def get_todays_picks(limit=3):
             }
         )
 
-    picks.sort(key=lambda x: (x["is_value"], x["confidence"]), reverse=True)
+    picks.sort(
+        key=lambda item: (
+            item["is_value"],
+            item["confidence"],
+        ),
+        reverse=True,
+    )
+
     return picks[:limit]
