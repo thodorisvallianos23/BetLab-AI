@@ -77,11 +77,15 @@ def get_bankroll():
 
 def calculate_suggested_stake(quarter_kelly_percent):
     bankroll = get_bankroll()
-
     current_balance = bankroll["current_balance"]
 
+    capped_percent = min(
+        max(float(quarter_kelly_percent), 0.0),
+        3.0,
+    )
+
     stake = current_balance * (
-        quarter_kelly_percent / 100
+        capped_percent / 100
     )
 
     return round(stake, 2)
