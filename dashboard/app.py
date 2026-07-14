@@ -25,7 +25,11 @@ def get_teams():
 
 
 st.set_page_config(page_title="BetLab AI Pro", layout="wide")
-
+with open("assets/styles.css", encoding="utf-8") as css_file:
+    st.markdown(
+        f"<style>{css_file.read()}</style>",
+        unsafe_allow_html=True,
+    )
 render_top_nav()
 
 teams = get_teams()

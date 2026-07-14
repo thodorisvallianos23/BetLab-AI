@@ -103,7 +103,7 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
     rows = []
 
     for item in bookmaker_odds:
-        odds = item["odds"]
+        odds = float(item["odds"])
 
         if odds <= 1:
             continue
@@ -114,6 +114,23 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
         implied_probability = 1 / odds
         edge = model_probability - implied_probability
 
+        expected_value = (
+            model_probability * (odds - 1)
+            - (1 - model_probability)
+        )
+
+        decimal_profit = odds - 1
+
+        if decimal_profit > 0:
+            kelly_fraction = (
+                decimal_profit * model_probability
+                - (1 - model_probability)
+            ) / decimal_profit
+        else:
+            kelly_fraction = 0
+
+        kelly_fraction = max(0, kelly_fraction)
+
         rows.append(
             {
                 "bookmaker": item["bookmaker"],
@@ -121,11 +138,21 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
                 "selection": item.get("selection", ""),
                 "odds": odds,
                 "fair_odds": fair_odds,
+                "implied_probability": implied_probability,
                 "edge": edge,
                 "value_percent": edge * 100,
-                "is_value": edge > 0.05,
+                "expected_value": expected_value,
+                "expected_value_percent": expected_value * 100,
+                "kelly_fraction": kelly_fraction,
+                "kelly_percent": kelly_fraction * 100,
+                "quarter_kelly_percent": kelly_fraction * 25,
+                "is_value": edge > 0.03 and expected_value > 0,
             }
         )
 
-    rows.sort(key=lambda x: x["edge"], reverse=True)
+    rows.sort(
+        key=lambda item: item["expected_value"],
+        reverse=True,
+    )
+
     return rows

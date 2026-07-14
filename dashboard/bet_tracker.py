@@ -2,7 +2,13 @@ import pandas as pd
 import streamlit as st
 
 from services.bankroll_service import get_bankroll, set_starting_balance
-from services.bet_service import get_all_bets, save_bet, settle_bet
+from services.bet_service import (
+    delete_bet,
+    get_all_bets,
+    save_bet,
+    settle_bet,
+    update_bet,
+)
 from services.bookmaker_service import add_bookmaker, get_bookmakers
 from services.tracker_stats import calculate_tracker_stats
 
@@ -18,17 +24,33 @@ def render_bet_tracker():
         starting_balance, current_balance, currency = 1000.0, 1000.0, "EUR"
 
     bets = get_all_bets()
-    stats = calculate_tracker_stats(starting_balance, current_balance, bets)
+    stats = calculate_tracker_stats(
+        starting_balance,
+        current_balance,
+        bets,
+    )
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("💰 Current Balance", f"{currency} {current_balance:.2f}")
-    c2.metric("📈 Profit/Loss", f"{currency} {stats['profit']:.2f}")
-    c3.metric("📊 ROI", f"{stats['roi']:.2f}%")
+    c1.metric(
+        "💰 Current Balance",
+        f"{currency} {current_balance:.2f}",
+    )
+    c2.metric(
+        "📈 Profit/Loss",
+        f"{currency} {stats['profit']:.2f}",
+    )
+    c3.metric(
+        "📊 ROI",
+        f"{stats['roi']:.2f}%",
+    )
 
     c4, c5, c6 = st.columns(3)
     c4.metric("🎯 Total Bets", stats["total_bets"])
     c5.metric("⏳ Pending", stats["pending_bets"])
-    c6.metric("🏆 Win Rate", f"{stats['win_rate']:.2f}%")
+    c6.metric(
+        "🏆 Win Rate",
+        f"{stats['win_rate']:.2f}%",
+    )
 
     with st.expander("⚙️ Bankroll Settings"):
         new_balance = st.number_input(
@@ -60,7 +82,10 @@ def render_bet_tracker():
             bet_date = st.date_input("Bet Date")
             match_name = st.text_input("Match")
             market = st.text_input("Market")
-            selection = st.selectbox("Selection", ["Yes", "No"])
+            selection = st.selectbox(
+                "Selection",
+                ["Yes", "No"],
+            )
 
             bookmakers = get_bookmakers()
 
@@ -69,8 +94,19 @@ def render_bet_tracker():
                 bookmakers,
             )
 
-            odds = st.number_input("Odds", min_value=1.01, value=1.80, step=0.01)
-            stake = st.number_input("Stake", min_value=0.0, value=10.0, step=1.0)
+            odds = st.number_input(
+                "Odds",
+                min_value=1.01,
+                value=1.80,
+                step=0.01,
+            )
+
+            stake = st.number_input(
+                "Stake",
+                min_value=0.0,
+                value=10.0,
+                step=1.0,
+            )
 
             submitted = st.form_submit_button("Save Bet")
 
@@ -84,6 +120,7 @@ def render_bet_tracker():
                     odds,
                     stake,
                 )
+
                 st.success("✅ Bet saved")
                 st.rerun()
 
@@ -91,46 +128,169 @@ def render_bet_tracker():
 
     st.subheader("📋 Bet History")
 
-    if bets:
-        df = pd.DataFrame(
-            bets,
-            columns=[
-                "ID",
-                "Date",
-                "Match",
-                "Market",
-                "Selection",
-                "Bookmaker",
-                "Odds",
-                "Stake",
-                "Result",
-                "Profit/Loss",
-            ],
-        )
-
-        st.dataframe(df, use_container_width=True)
-
-        st.subheader("✅ Update Bet Result")
-
-        bet_id = st.number_input("Bet ID", min_value=1, step=1)
-
-        result = st.selectbox(
-            "Result",
-            ["Won", "Lost", "Push"],
-        )
-
-        if st.button("Update Result"):
-            selected_bet = df[df["ID"] == bet_id]
-
-            if selected_bet.empty:
-                st.error("Bet ID not found.")
-            else:
-                success = settle_bet(bet_id, result)
-
-                if success:
-                    st.success("✅ Bet settled successfully.")
-                    st.rerun()
-                else:
-                    st.error("This bet has already been settled or does not exist.")
-    else:
+    if not bets:
         st.info("No bets saved yet.")
+        return
+
+    df = pd.DataFrame(
+        bets,
+        columns=[
+            "ID",
+            "Date",
+            "Match",
+            "Market",
+            "Selection",
+            "Bookmaker",
+            "Odds",
+            "Stake",
+            "Result",
+            "Profit/Loss",
+        ],
+    )
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("🛠️ Manage Bet History")
+
+    bet_ids = df["ID"].tolist()
+
+    selected_id = st.selectbox(
+        "Select Bet ID",
+        bet_ids,
+    )
+
+    selected_row = df[df["ID"] == selected_id].iloc[0]
+
+    tab_edit, tab_settle, tab_delete = st.tabs(
+        ["✏️ Edit", "✅ Settle", "🗑️ Delete"]
+    )
+
+    with tab_edit:
+        with st.form("edit_bet_form"):
+            edit_date = st.text_input(
+                "Date",
+                value=str(selected_row["Date"]),
+            )
+
+            edit_match = st.text_input(
+                "Match",
+                value=str(selected_row["Match"]),
+            )
+
+            edit_market = st.text_input(
+                "Market",
+                value=str(selected_row["Market"]),
+            )
+
+            edit_selection = st.text_input(
+                "Selection",
+                value=str(selected_row["Selection"]),
+            )
+
+            edit_bookmaker = st.text_input(
+                "Bookmaker",
+                value=str(selected_row["Bookmaker"]),
+            )
+
+            edit_odds = st.number_input(
+                "Odds",
+                min_value=1.01,
+                value=float(selected_row["Odds"]),
+                step=0.01,
+            )
+
+            edit_stake = st.number_input(
+                "Stake",
+                min_value=0.0,
+                value=float(selected_row["Stake"]),
+                step=1.0,
+            )
+
+            edit_submitted = st.form_submit_button(
+                "Save Changes"
+            )
+
+            if edit_submitted:
+                if selected_row["Result"] != "Pending":
+                    st.error(
+                        "Settled bets cannot be edited. "
+                        "Delete the bet and add it again if needed."
+                    )
+                else:
+                    success = update_bet(
+                        selected_id,
+                        edit_date,
+                        edit_match,
+                        edit_market,
+                        edit_selection,
+                        edit_bookmaker,
+                        edit_odds,
+                        edit_stake,
+                    )
+
+                    if success:
+                        st.success("✅ Bet updated.")
+                        st.rerun()
+                    else:
+                        st.error("Bet not found.")
+
+    with tab_settle:
+        st.write(
+            f"Selected bet: **{selected_row['Match']}**"
+        )
+
+        st.write(
+            f"Current result: **{selected_row['Result']}**"
+        )
+
+        settle_result = st.selectbox(
+            "New Result",
+            ["Won", "Lost", "Push"],
+            key="settle_result",
+        )
+
+        if st.button(
+            "Settle Bet",
+            key="settle_bet_button",
+        ):
+            success = settle_bet(
+                selected_id,
+                settle_result,
+            )
+
+            if success:
+                st.success("✅ Bet settled successfully.")
+                st.rerun()
+            else:
+                st.error(
+                    "This bet has already been settled "
+                    "or does not exist."
+                )
+
+    with tab_delete:
+        st.warning(
+            "Deleting a settled bet will also reverse "
+            "its profit/loss from the bankroll."
+        )
+
+        confirm_delete = st.checkbox(
+            "I confirm that I want to delete this bet.",
+            key="confirm_delete",
+        )
+
+        if st.button(
+            "Delete Bet",
+            disabled=not confirm_delete,
+            key="delete_bet_button",
+        ):
+            success = delete_bet(selected_id)
+
+            if success:
+                st.success("✅ Bet deleted.")
+                st.rerun()
+            else:
+                st.error("Bet not found.")

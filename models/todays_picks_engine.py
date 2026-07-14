@@ -1,3 +1,4 @@
+from database.bankroll import calculate_suggested_stake
 from models.prediction_engine import predict_match
 from services.football_api import get_today_fixtures
 from services.odds_api import (
@@ -116,8 +117,12 @@ def get_todays_picks(limit=3):
         best_bet = prediction["best_bet"]
 
         best_bookmaker = "N/A"
-        best_odds = 0
-        value_percent = 0
+        best_odds = 0.0
+        value_percent = 0.0
+        expected_value_percent = 0.0
+        kelly_percent = 0.0
+        quarter_kelly_percent = 0.0
+        suggested_stake = 0.0
         is_value = False
 
         event = find_odds_event(
@@ -141,9 +146,30 @@ def get_todays_picks(limit=3):
 
             if value_rows:
                 best_value = value_rows[0]
+
                 best_bookmaker = best_value["bookmaker"]
                 best_odds = best_value["odds"]
                 value_percent = best_value["value_percent"]
+
+                expected_value_percent = best_value.get(
+                    "expected_value_percent",
+                    0.0,
+                )
+
+                kelly_percent = best_value.get(
+                    "kelly_percent",
+                    0.0,
+                )
+
+                quarter_kelly_percent = best_value.get(
+                    "quarter_kelly_percent",
+                    0.0,
+                )
+
+                suggested_stake = calculate_suggested_stake(
+                    quarter_kelly_percent
+                )
+
                 is_value = best_value["is_value"]
 
         picks.append(
@@ -159,6 +185,10 @@ def get_todays_picks(limit=3):
                 "best_bookmaker": best_bookmaker,
                 "best_odds": best_odds,
                 "value_percent": value_percent,
+                "expected_value_percent": expected_value_percent,
+                "kelly_percent": kelly_percent,
+                "quarter_kelly_percent": quarter_kelly_percent,
+                "suggested_stake": suggested_stake,
                 "is_value": is_value,
                 "explanation": explain_pick(prediction),
             }
@@ -167,6 +197,7 @@ def get_todays_picks(limit=3):
     picks.sort(
         key=lambda item: (
             item["is_value"],
+            item["expected_value_percent"],
             item["confidence"],
         ),
         reverse=True,
