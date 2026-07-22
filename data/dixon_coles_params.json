@@ -1,0 +1,8 @@
+{
+    "league_id": 1,
+    "season_id": 1,
+    "rho": -0.158,
+    "log_likelihood": -1114.6136472787732,
+    "matches_used": 350,
+    "matches_skipped": 30
+}
