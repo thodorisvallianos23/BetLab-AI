@@ -430,107 +430,57 @@ def get_todays_picks(
     limit=10,
     include_passes=True,
 ):
-    fixtures = get_today_fixtures()
     live_odds = get_live_odds()
     picks = []
 
-    for fixture in fixtures:
-        home_team = fixture["home_team"]
-        away_team = fixture["away_team"]
+    print(f"Processing {len(live_odds)} odds events")
 
-        prediction = predict_match(
-            home_team,
-            away_team,
-        )
+    for event in live_odds:
+        home_team = event.get("home_team")
+        away_team = event.get("away_team")
 
-        if prediction is None:
+        if not home_team or not away_team:
             continue
 
-        qualified_markets = get_qualified_markets(
-            prediction
-        )
+        print(f"Checking: {home_team} vs {away_team}")
 
-        if not qualified_markets:
-            if include_passes:
-                picks.append(
-                    build_pass_pick(
-                        fixture,
-                        prediction,
-                    )
-                )
-
-            continue
-
-        event = find_odds_event(
-            live_odds,
-            home_team,
-            away_team,
-        )
-
-        if event is None:
-            if include_passes:
-                picks.append(
-                    build_pass_pick(
-                        fixture,
-                        prediction,
-                    )
-                )
-
-            continue
-
-        scanned_markets = scan_value_markets(
-            event,
-            prediction,
-            home_team,
-            away_team,
-        )
-
-        if not scanned_markets:
-            if include_passes:
-                picks.append(
-                    build_pass_pick(
-                        fixture,
-                        prediction,
-                    )
-                )
-
-            continue
-
-        best_candidate = scanned_markets[0]
-
-        if best_candidate["is_value"]:
-            picks.append(
-                build_value_pick(
-                    fixture,
-                    prediction,
-                    best_candidate,
-                )
-            )
-        else:
-            picks.append(
-                build_no_value_pick(
-                    fixture,
-                    prediction,
-                    best_candidate,
-                )
-            )
-
-    status_priority = {
-        "VALUE": 3,
-        "NO_VALUE": 2,
-        "PASS": 1,
-    }
-
-    picks.sort(
-        key=lambda item: (
-            status_priority.get(
-                item["recommendation_status"],
-                0,
+        # Προσωρινά δεν καλούμε ακόμη το prediction engine,
+        # επειδή χρειάζεται database IDs και όχι ονόματα.
+        fixture = {
+            "date": event.get("commence_time", ""),
+            "league": event.get(
+                "sport_title",
+                event.get("sport_key", "Unknown"),
             ),
-            item["expected_value_percent"],
-            item["confidence"],
-        ),
-        reverse=True,
-    )
+            "home_team": home_team,
+            "away_team": away_team,
+        }
+
+        picks.append(
+            {
+                "date": fixture["date"],
+                "league": fixture["league"],
+                "match": f"{home_team} vs {away_team}",
+                "market": "PENDING MODEL",
+                "probability": 0.0,
+                "fair_odds": 0.0,
+                "confidence": 0.0,
+                "stars": 0,
+                "best_bookmaker": "N/A",
+                "best_odds": 0.0,
+                "value_percent": 0.0,
+                "expected_value_percent": 0.0,
+                "kelly_percent": 0.0,
+                "quarter_kelly_percent": 0.0,
+                "suggested_stake": 0.0,
+                "is_value": False,
+                "recommendation_status": "PASS",
+                "odds_available": bool(event.get("bookmakers")),
+                "explanation": [
+                    "ℹ️ Odds event loaded successfully.",
+                    "ℹ️ Waiting for team and league database mapping.",
+                ],
+            }
+        )
 
     return picks[:limit]

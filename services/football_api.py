@@ -10,27 +10,40 @@ load_dotenv(ROOT / ".env")
 
 API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 
-today = date.today()
-next_week = today + timedelta(days=7)
-
-URL = (
-    "https://api.football-data.org/v4/competitions/WC/matches"
-    f"?dateFrom={today}&dateTo={next_week}"
-)
+COMPETITION = "CL"  # Champions League
+BASE_URL = f"https://api.football-data.org/v4/competitions/{COMPETITION}/matches"
 
 
-def get_today_fixtures():
+def get_today_fixtures(days_ahead: int = 10):
     if not API_KEY:
         print("❌ FOOTBALL_DATA_API_KEY not found.")
         return []
+
+    today = date.today()
+    end_date = today + timedelta(days=days_ahead - 1)
 
     headers = {
         "X-Auth-Token": API_KEY,
     }
 
-    response = requests.get(URL, headers=headers)
+    params = {
+        "dateFrom": today.isoformat(),
+        "dateTo": end_date.isoformat(),
+    }
+
+    try:
+        response = requests.get(
+            BASE_URL,
+            headers=headers,
+            params=params,
+            timeout=15,
+        )
+    except requests.RequestException as error:
+        print(error)
+        return []
 
     print("API KEY LOADED:", bool(API_KEY))
+    print("Football API URL:", response.url)
     print("Status:", response.status_code)
 
     if response.status_code != 200:
@@ -38,23 +51,27 @@ def get_today_fixtures():
         return []
 
     data = response.json()
+    print(data)
+    matches = data.get("matches", [])
+
+    print(f"Raw matches: {len(matches)}")
+
     fixtures = []
 
-    for match in data.get("matches", []):
+    for match in matches:
 
-        home_team = match.get("homeTeam", {}).get("name")
-        away_team = match.get("awayTeam", {}).get("name")
+        home = match.get("homeTeam", {}).get("name")
+        away = match.get("awayTeam", {}).get("name")
 
-        # Αγνοούμε fixtures που δεν έχουν ακόμα οριστεί
-        if not home_team or not away_team:
+        if not home or not away:
             continue
 
         fixtures.append(
             {
                 "date": match["utcDate"][:10],
                 "league": match["competition"]["name"],
-                "home_team": home_team,
-                "away_team": away_team,
+                "home_team": home,
+                "away_team": away,
                 "status": match["status"],
             }
         )

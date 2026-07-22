@@ -9,30 +9,86 @@ load_dotenv(ROOT / ".env")
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
+SOCCER_SPORTS = [
+    "soccer_argentina_primera_division",
+    "soccer_austria_bundesliga",
+    "soccer_belgium_first_div",
+    "soccer_brazil_campeonato",
+    "soccer_brazil_serie_b",
+    "soccer_chile_campeonato",
+    "soccer_china_superleague",
+    "soccer_conmebol_copa_libertadores",
+    "soccer_conmebol_copa_sudamericana",
+    "soccer_denmark_superliga",
+    "soccer_efl_champ",
+    "soccer_england_efl_cup",
+    "soccer_england_league1",
+    "soccer_england_league2",
+    "soccer_epl",
+    "soccer_finland_veikkausliiga",
+    "soccer_france_ligue_one",
+    "soccer_germany_bundesliga",
+    "soccer_germany_bundesliga2",
+    "soccer_germany_dfb_pokal",
+    "soccer_germany_liga3",
+    "soccer_greece_super_league",
+    "soccer_italy_serie_a",
+    "soccer_korea_kleague1",
+    "soccer_league_of_ireland",
+    "soccer_mexico_ligamx",
+    "soccer_netherlands_eredivisie",
+    "soccer_norway_eliteserien",
+    "soccer_poland_ekstraklasa",
+    "soccer_russia_premier_league",
+    "soccer_spain_la_liga",
+    "soccer_spl",
+    "soccer_sweden_allsvenskan",
+    "soccer_sweden_superettan",
+    "soccer_switzerland_superleague",
+    "soccer_uefa_champs_league_qualification",
+    "soccer_usa_mls",
+]
 
-def get_live_odds(sport="soccer_fifa_world_cup"):
+
+def get_live_odds():
     if not ODDS_API_KEY:
         print("❌ ODDS_API_KEY not found.")
         return []
 
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
+    all_events = []
 
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "eu",
-        "markets": "h2h,totals",
-        "oddsFormat": "decimal",
-    }
+    for sport in SOCCER_SPORTS:
+        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
 
-    response = requests.get(url, params=params)
+        params = {
+            "apiKey": ODDS_API_KEY,
+            "regions": "eu",
+            "markets": "h2h,totals",
+            "oddsFormat": "decimal",
+        }
 
-    print("Odds API Status:", response.status_code)
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                timeout=15,
+            )
+        except requests.RequestException:
+            continue
 
-    if response.status_code != 200:
-        print(response.text)
-        return []
+        if response.status_code != 200:
+            continue
 
-    return response.json()
+        events = response.json()
+
+        if events:
+            print(f"✅ {sport}: {len(events)} events")
+
+        all_events.extend(events)
+
+    print(f"\n📊 Total football events loaded: {len(all_events)}")
+
+    return all_events
 
 
 def get_mock_bookmaker_odds(match_name, market):
@@ -154,5 +210,25 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
         key=lambda item: item["expected_value"],
         reverse=True,
     )
+def list_available_sports():
+    url = "https://api.the-odds-api.com/v4/sports"
 
-    return rows
+    response = requests.get(
+        url,
+        params={"apiKey": ODDS_API_KEY},
+        timeout=15,
+    )
+
+    print("Sports Status:", response.status_code)
+
+    data = response.json()
+
+    for sport in data:
+        print(
+            sport["key"],
+            "|",
+            sport["title"],
+            "| active:",
+            sport["active"],
+        )
+    return data

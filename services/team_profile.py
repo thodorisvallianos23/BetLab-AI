@@ -8,13 +8,15 @@ conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute("""
-SELECT
-    team_name,
-    attack_rating,
-    defence_rating
+SELECT team_name
 FROM teams
-WHERE team_name = ?
-""", (TEAM_NAME,))
+ORDER BY team_name
+""")
+
+for row in cursor.fetchall():
+    print(row[0])
+
+conn.close()
 
 team = cursor.fetchone()
 

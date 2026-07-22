@@ -1,4 +1,8 @@
 from dataclasses import dataclass
+from typing import Dict, List
+
+from models.bankroll import calculate_stake
+from models.prediction_engine import PredictionResult
 
 
 @dataclass(frozen=True)
@@ -15,6 +19,12 @@ class ValueBetResult:
     quarter_kelly: float
 
     is_value: bool
+
+
+@dataclass(frozen=True)
+class MarketValueBet:
+    market: str
+    result: ValueBetResult
 
 
 def fair_odds(probability: float) -> float:
@@ -99,28 +109,16 @@ def evaluate_value_bet(
         probability=probability,
         fair_odds=fair,
         bookmaker_odds=bookmaker_odds,
-
         edge=edge,
         expected_value=expected_value,
-
         kelly_fraction=kelly,
         half_kelly=kelly / 2.0,
         quarter_kelly=kelly / 4.0,
-
         is_value=(
             edge >= minimum_edge
             and expected_value > 0.0
         ),
     )
-from typing import Dict, List
-
-from models.prediction_engine import PredictionResult
-
-
-@dataclass(frozen=True)
-class MarketValueBet:
-    market: str
-    result: ValueBetResult
 
 
 def evaluate_prediction_markets(
@@ -172,13 +170,18 @@ def evaluate_prediction_markets(
 
     return results
 
+
 def print_market_value_bets(
     results: List[MarketValueBet],
+    bankroll: float,
     only_value_bets: bool = True,
+    minimum_stake: float = 2.0,
+    maximum_fraction: float = 0.03,
 ) -> None:
     print()
     print("BETLAB AI MARKET VALUE ANALYSIS")
     print("=" * 60)
+    print(f"Bankroll:           €{bankroll:.2f}")
 
     displayed = 0
 
@@ -188,41 +191,76 @@ def print_market_value_bets(
 
         displayed += 1
 
+        stake = calculate_stake(
+            bankroll=bankroll,
+            stake_fraction=item.result.half_kelly,
+            minimum_stake=minimum_stake,
+            maximum_fraction=maximum_fraction,
+        )
+
         print()
         print(item.market.upper())
         print("-" * 60)
+
         print(
-            f"Probability:       "
+            f"Probability:        "
             f"{item.result.probability:.2%}"
         )
         print(
-            f"Fair odds:         "
+            f"Fair odds:          "
             f"{item.result.fair_odds:.2f}"
         )
         print(
-            f"Bookmaker odds:    "
+            f"Bookmaker odds:     "
             f"{item.result.bookmaker_odds:.2f}"
         )
         print(
-            f"Edge:              "
+            f"Edge:               "
             f"{item.result.edge:.2%}"
         )
         print(
-            f"Expected value:    "
+            f"Expected value:     "
             f"{item.result.expected_value:.2%}"
         )
         print(
-            f"Half Kelly:        "
+            f"Half Kelly:         "
             f"{item.result.half_kelly:.2%}"
         )
+
         print(
-            f"Value bet:         "
+            f"Kelly stake:        "
+            f"€{stake.recommended_stake:.2f}"
+        )
+        print(
+            f"Final stake:        "
+            f"€{stake.final_stake:.2f}"
+        )
+
+        if stake.capped:
+            print("Stake capped:       YES")
+        else:
+            print("Stake capped:       NO")
+
+        if stake.skipped:
+            print("Stake skipped:      YES")
+        else:
+            print("Stake skipped:      NO")
+
+        if stake.reason:
+            print(
+                f"Stake reason:       "
+                f"{stake.reason}"
+            )
+
+        print(
+            f"Value bet:          "
             f"{'YES' if item.result.is_value else 'NO'}"
         )
 
     if displayed == 0:
         print()
         print("No value bets found.")
+
 
 def print_value_bet(
     result: ValueBetResult,
@@ -232,51 +270,53 @@ def print_value_bet(
     print("=" * 50)
 
     print(
-        f"Probability:       "
+        f"Probability:        "
         f"{result.probability:.2%}"
     )
     print(
-        f"Fair odds:        "
+        f"Fair odds:          "
         f"{result.fair_odds:.2f}"
     )
     print(
-        f"Bookmaker odds:   "
+        f"Bookmaker odds:     "
         f"{result.bookmaker_odds:.2f}"
     )
 
     print()
     print(
-        f"Edge:             "
+        f"Edge:               "
         f"{result.edge:.2%}"
     )
     print(
-        f"Expected value:   "
+        f"Expected value:     "
         f"{result.expected_value:.2%}"
     )
 
     print()
     print(
-        f"Full Kelly:       "
+        f"Full Kelly:         "
         f"{result.kelly_fraction:.2%}"
     )
     print(
-        f"Half Kelly:       "
+        f"Half Kelly:         "
         f"{result.half_kelly:.2%}"
     )
     print(
-        f"Quarter Kelly:    "
+        f"Quarter Kelly:      "
         f"{result.quarter_kelly:.2%}"
     )
 
     print()
     print(
-        f"Value bet:        "
+        f"Value bet:          "
         f"{'YES' if result.is_value else 'NO'}"
     )
 
 
 def main() -> None:
     from models.prediction_engine import predict_match
+
+    bankroll = 100.0
 
     prediction = predict_match(
         home_team_id=18,
@@ -309,11 +349,15 @@ def main() -> None:
         bookmaker_odds=bookmaker_odds,
         minimum_edge=0.02,
     )
-    print(len(results))
 
     print_market_value_bets(
         results=results,
+        bankroll=bankroll,
         only_value_bets=False,
+        minimum_stake=2.0,
+        maximum_fraction=0.03,
     )
+
+
 if __name__ == "__main__":
     main()
