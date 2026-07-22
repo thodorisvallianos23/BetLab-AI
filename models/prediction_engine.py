@@ -1,601 +1,346 @@
-import math
-import sqlite3
-from pathlib import Path
+from dataclasses import dataclass
+from typing import Any, Optional
 
-DB_PATH = Path("data/betlab_v2.db")
+from database.connection import get_connection
+from models.dixon_coles import apply_dixon_coles
+from models.expected_goals import get_expected_goals
+from models.poisson_model import PoissonResult, run_poisson_model
 
 
-def poisson_probability(lam, goals):
-    if lam < 0 or goals < 0:
+@dataclass(frozen=True)
+class ScorePrediction:
+    home_goals: int
+    away_goals: int
+    probability: float
+    fair_odds: float
+
+
+@dataclass(frozen=True)
+class PredictionResult:
+    home_team_id: int
+    away_team_id: int
+    league_id: int
+    season_id: int
+
+    home_expected_goals: float
+    away_expected_goals: float
+    total_expected_goals: float
+
+    home_win_probability: float
+    draw_probability: float
+    away_win_probability: float
+
+    over_15_probability: float
+    under_15_probability: float
+    over_25_probability: float
+    under_25_probability: float
+    over_35_probability: float
+    under_35_probability: float
+
+    btts_yes_probability: float
+    btts_no_probability: float
+
+    fair_home_odds: float
+    fair_draw_odds: float
+    fair_away_odds: float
+
+    fair_over_15_odds: float
+    fair_under_15_odds: float
+    fair_over_25_odds: float
+    fair_under_25_odds: float
+    fair_over_35_odds: float
+    fair_under_35_odds: float
+
+    fair_btts_yes_odds: float
+    fair_btts_no_odds: float
+
+    most_likely_score: ScorePrediction
+    top_scores: list[ScorePrediction]
+
+    model_name: str
+
+
+def fair_odds(probability: float) -> float:
+    if probability <= 0.0:
         return 0.0
+    return 1.0 / probability
 
-    return (
-        math.exp(-lam)
-        * (lam**goals)
-        / math.factorial(goals)
+
+def clamp_probability(probability: float) -> float:
+    return max(0.0, min(1.0, float(probability)))
+
+
+def get_market_probability(
+    probabilities: dict[float, float],
+    line: float,
+) -> float:
+    if line in probabilities:
+        return clamp_probability(probabilities[line])
+
+    string_line = str(line)
+    if string_line in probabilities:
+        return clamp_probability(probabilities[string_line])  # type: ignore[index]
+
+    raise KeyError(
+        f"Missing goals line {line} in probabilities: "
+        f"{list(probabilities.keys())}"
     )
 
 
-def over_probability(total_xg, line):
-    """
-    Over 1.5 = 2 or more goals.
-    Over 2.5 = 3 or more goals.
-    Over 3.5 = 4 or more goals.
-    """
-    if total_xg <= 0:
-        return 0.0
-
-    goal_limit = math.floor(line)
-
-    under_probability = sum(
-        poisson_probability(total_xg, goals)
-        for goals in range(goal_limit + 1)
-    )
-
-    probability = 1 - under_probability
-
-    return max(0.0, min(1.0, probability))
-
-
-def fair_odds(probability):
-    if probability <= 0:
-        return 0.0
-
-    return 1 / probability
-
-
-def confidence_score(prediction):
-    over_25 = prediction["over_25"]
-    total_xg = prediction["total_xg"]
-    btts = prediction["btts"]
-
-    score = 0.0
-
-    score += min(total_xg * 20, 40)
-    score += over_25 * 35
-    score += btts * 15
-
-    return round(min(score, 100), 1)
-
-
-def star_rating(confidence):
-    if confidence >= 80:
-        return 5
-
-    if confidence >= 65:
-        return 4
-
-    if confidence >= 50:
-        return 3
-
-    if confidence >= 35:
-        return 2
-
-    return 1
-
-
-def best_bet_recommendation(prediction):
-    """
-    Επιλέγει το καλύτερο betting market με βάση:
-
-    1. Minimum probability threshold
-    2. Πόσο ξεπερνάει το market το threshold
-    3. Market weight
-    4. Extra προστασία από οριακά signals
-
-    Αν κανένα market δεν είναι αρκετά δυνατό,
-    επιστρέφει No Bet.
-    """
-
-    markets = [
-        {
-            "market": "Home Win",
-            "probability": prediction["home_win"],
-            "fair_odds": prediction["fair_home_win"],
-            "minimum_probability": 0.46,
-            "weight": 1.00,
-        },
-        {
-            "market": "Away Win",
-            "probability": prediction["away_win"],
-            "fair_odds": prediction["fair_away_win"],
-            "minimum_probability": 0.46,
-            "weight": 1.00,
-        },
-        {
-            "market": "Over 1.5",
-            "probability": prediction["over_15"],
-            "fair_odds": prediction["fair_o15"],
-            "minimum_probability": 0.68,
-            "weight": 0.80,
-        },
-        {
-            "market": "Over 2.5",
-            "probability": prediction["over_25"],
-            "fair_odds": prediction["fair_o25"],
-            "minimum_probability": 0.50,
-            "weight": 1.25,
-        },
-        {
-            "market": "Over 3.5",
-            "probability": prediction["over_35"],
-            "fair_odds": prediction["fair_o35"],
-            "minimum_probability": 0.34,
-            "weight": 1.10,
-        },
-    ]
-
-    qualified_markets = []
-
-    for market in markets:
-        probability = market["probability"]
-        minimum_probability = market["minimum_probability"]
-        weight = market["weight"]
-
-        probability_edge = (
-            probability - minimum_probability
+def unpack_score_probability(score: Any) -> tuple[int, int, float]:
+    if hasattr(score, "home_goals"):
+        return (
+            int(score.home_goals),
+            int(score.away_goals),
+            float(score.probability),
         )
 
-        if probability_edge < 0:
-            continue
-
-        signal_score = (
-            probability_edge * weight
+    if isinstance(score, dict):
+        return (
+            int(score["home_goals"]),
+            int(score["away_goals"]),
+            float(score["probability"]),
         )
 
-        market["probability_edge"] = probability_edge
-        market["signal_score"] = signal_score
+    if isinstance(score, (tuple, list)) and len(score) >= 3:
+        return int(score[0]), int(score[1]), float(score[2])
 
-        qualified_markets.append(market)
-
-    if not qualified_markets:
-        return {
-            "market": "No Bet",
-            "probability": 0.0,
-            "fair_odds": 0.0,
-            "signal_score": 0.0,
-            "probability_edge": 0.0,
-        }
-
-    qualified_markets.sort(
-        key=lambda item: (
-            item["signal_score"],
-            item["probability"],
-        ),
-        reverse=True,
+    raise TypeError(
+        "Unsupported score probability item: "
+        f"{type(score).__name__}"
     )
 
-    best_market = qualified_markets[0]
 
-    return {
-        "market": best_market["market"],
-        "probability": best_market["probability"],
-        "fair_odds": best_market["fair_odds"],
-        "signal_score": best_market["signal_score"],
-        "probability_edge": best_market["probability_edge"],
-    }
+def get_top_score_predictions(
+    result: PoissonResult,
+    limit: int = 5,
+) -> list[ScorePrediction]:
+    if limit <= 0:
+        raise ValueError("top_score_limit must be greater than zero.")
 
+    scores: list[ScorePrediction] = []
 
-def match_outcome_probabilities(
-    home_xg,
-    away_xg,
-    max_goals=8,
-):
-    home_win = 0.0
-    draw = 0.0
-    away_win = 0.0
+    for score in result.score_probabilities:
+        home_goals, away_goals, probability = unpack_score_probability(score)
+        probability = clamp_probability(probability)
 
-    for home_goals in range(max_goals + 1):
-        for away_goals in range(max_goals + 1):
-            probability = (
-                poisson_probability(home_xg, home_goals)
-                * poisson_probability(away_xg, away_goals)
+        scores.append(
+            ScorePrediction(
+                home_goals=home_goals,
+                away_goals=away_goals,
+                probability=probability,
+                fair_odds=fair_odds(probability),
             )
-
-            if home_goals > away_goals:
-                home_win += probability
-            elif home_goals == away_goals:
-                draw += probability
-            else:
-                away_win += probability
-
-    total_probability = home_win + draw + away_win
-
-    if total_probability > 0:
-        home_win /= total_probability
-        draw /= total_probability
-        away_win /= total_probability
-
-    return {
-        "home_win": home_win,
-        "draw": draw,
-        "away_win": away_win,
-    }
-
-
-def btts_probability(home_xg, away_xg):
-    home_no_goal = poisson_probability(home_xg, 0)
-    away_no_goal = poisson_probability(away_xg, 0)
-    both_no_goal = home_no_goal * away_no_goal
-
-    probability = (
-        1
-        - home_no_goal
-        - away_no_goal
-        + both_no_goal
-    )
-
-    return max(0.0, min(1.0, probability))
-
-
-def correct_score_matrix(
-    home_xg,
-    away_xg,
-    max_goals=6,
-):
-    scores = []
-
-    for home_goals in range(max_goals + 1):
-        for away_goals in range(max_goals + 1):
-            probability = (
-                poisson_probability(home_xg, home_goals)
-                * poisson_probability(away_xg, away_goals)
-            )
-
-            scores.append(
-                {
-                    "score": f"{home_goals}-{away_goals}",
-                    "probability": probability,
-                    "fair_odds": fair_odds(probability),
-                }
-            )
-
-    scores.sort(
-        key=lambda item: item["probability"],
-        reverse=True,
-    )
-
-    return scores
-
-
-def get_team_rating(team_name):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT attack_rating, defence_rating
-        FROM teams
-        WHERE team_name = ?
-        """,
-        (team_name,),
-    )
-
-    result = cursor.fetchone()
-    conn.close()
-
-    return result
-
-
-def get_recent_form(team_name, limit=5):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT id
-        FROM teams
-        WHERE team_name = ?
-        """,
-        (team_name,),
-    )
-
-    team = cursor.fetchone()
-
-    if not team:
-        conn.close()
-        return 50.0
-
-    team_id = team[0]
-
-    cursor.execute(
-        """
-        SELECT
-            home_team_id,
-            away_team_id,
-            home_goals,
-            away_goals
-        FROM matches
-        WHERE home_team_id = ?
-           OR away_team_id = ?
-        ORDER BY match_date DESC
-        LIMIT ?
-        """,
-        (
-            team_id,
-            team_id,
-            limit,
-        ),
-    )
-
-    matches = cursor.fetchall()
-    conn.close()
-
-    if not matches:
-        return 50.0
-
-    points = 0
-    goals_for = 0
-    goals_against = 0
-
-    for (
-        home_id,
-        away_id,
-        home_goals,
-        away_goals,
-    ) in matches:
-        if home_goals is None or away_goals is None:
-            continue
-
-        if home_id == team_id:
-            goals_scored = home_goals
-            goals_conceded = away_goals
-        else:
-            goals_scored = away_goals
-            goals_conceded = home_goals
-
-        goals_for += goals_scored
-        goals_against += goals_conceded
-
-        if goals_scored > goals_conceded:
-            points += 3
-        elif goals_scored == goals_conceded:
-            points += 1
-
-    maximum_points = len(matches) * 3
-
-    if maximum_points <= 0:
-        return 50.0
-
-    points_score = (
-        points / maximum_points
-    ) * 100
-
-    goal_balance_score = max(
-        0,
-        min(
-            100,
-            50 + (
-                goals_for - goals_against
-            ) * 5,
-        ),
-    )
-
-    form_rating = (
-        points_score * 0.7
-        + goal_balance_score * 0.3
-    )
-
-    return round(form_rating, 2)
-
-
-def get_home_away_strength(team_name):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT id
-        FROM teams
-        WHERE team_name = ?
-        """,
-        (team_name,),
-    )
-
-    team = cursor.fetchone()
-
-    if not team:
-        conn.close()
-
-        return {
-            "home_strength": 50.0,
-            "away_strength": 50.0,
-        }
-
-    team_id = team[0]
-
-    cursor.execute(
-        """
-        SELECT
-            AVG(home_goals),
-            AVG(away_goals)
-        FROM matches
-        WHERE home_team_id = ?
-        """,
-        (team_id,),
-    )
-
-    home_result = cursor.fetchone()
-    home_goals_for = home_result[0] or 0
-    home_goals_against = home_result[1] or 0
-
-    cursor.execute(
-        """
-        SELECT
-            AVG(away_goals),
-            AVG(home_goals)
-        FROM matches
-        WHERE away_team_id = ?
-        """,
-        (team_id,),
-    )
-
-    away_result = cursor.fetchone()
-    away_goals_for = away_result[0] or 0
-    away_goals_against = away_result[1] or 0
-
-    conn.close()
-
-    home_strength = (
-        home_goals_for * 30
-        + 100
-        - home_goals_against * 25
-    )
-
-    away_strength = (
-        away_goals_for * 30
-        + 100
-        - away_goals_against * 25
-    )
-
-    return {
-        "home_strength": round(
-            max(0, min(100, home_strength)),
-            2,
-        ),
-        "away_strength": round(
-            max(0, min(100, away_strength)),
-            2,
-        ),
-    }
-
-
-def predict_match(home_team, away_team):
-    home_rating = get_team_rating(home_team)
-    away_rating = get_team_rating(away_team)
-
-    if not home_rating or not away_rating:
-        return None
-
-    home_attack, home_defence = home_rating
-    away_attack, away_defence = away_rating
-
-    home_form = get_recent_form(home_team)
-    away_form = get_recent_form(away_team)
-
-    form_boost = (
-        home_form - away_form
-    ) / 100
-
-    home_strength_data = get_home_away_strength(
-        home_team
-    )
-
-    away_strength_data = get_home_away_strength(
-        away_team
-    )
-
-    home_strength = home_strength_data[
-        "home_strength"
-    ]
-
-    away_strength = away_strength_data[
-        "away_strength"
-    ]
-
-    strength_boost = (
-        home_strength - away_strength
-    ) / 200
-
-    home_xg = max(
-        0.35,
-        (
-            (home_attack / 55)
-            * ((115 - away_defence) / 45)
-            + 0.55
-            + (form_boost * 0.35)
-            + (strength_boost * 0.30)
-        ),
-    )
-
-    away_xg = max(
-        0.30,
-        (
-            (away_attack / 58)
-            * ((112 - home_defence) / 48)
-            + 0.30
-            - (form_boost * 0.25)
-            - (strength_boost * 0.20)
-        ),
-    )
-
-    total_xg = home_xg + away_xg
-
-    outcome_probs = match_outcome_probabilities(
-        home_xg,
-        away_xg,
-    )
-
-    btts = btts_probability(
-        home_xg,
-        away_xg,
-    )
-
-    over_15 = over_probability(
-        total_xg,
-        1.5,
-    )
-
-    over_25 = over_probability(
-        total_xg,
-        2.5,
-    )
-
-    over_35 = over_probability(
-        total_xg,
-        3.5,
-    )
-
-    scores = correct_score_matrix(
-        home_xg,
-        away_xg,
-    )
-
-    prediction_data = {
-        "home_xg": home_xg,
-        "away_xg": away_xg,
-        "total_xg": total_xg,
-        "home_form": home_form,
-        "away_form": away_form,
-        "home_strength": home_strength,
-        "away_strength": away_strength,
-        "home_win": outcome_probs["home_win"],
-        "draw": outcome_probs["draw"],
-        "away_win": outcome_probs["away_win"],
-        "fair_home_win": fair_odds(
-            outcome_probs["home_win"]
-        ),
-        "fair_draw": fair_odds(
-            outcome_probs["draw"]
-        ),
-        "fair_away_win": fair_odds(
-            outcome_probs["away_win"]
-        ),
-        "btts": btts,
-        "fair_btts": fair_odds(btts),
-        "over_15": over_15,
-        "over_25": over_25,
-        "over_35": over_35,
-        "fair_o15": fair_odds(over_15),
-        "fair_o25": fair_odds(over_25),
-        "fair_o35": fair_odds(over_35),
-    }
-
-    confidence = confidence_score(
-        prediction_data
-    )
-
-    prediction_data["confidence"] = confidence
-    prediction_data["stars"] = star_rating(
-        confidence
-    )
-
-    prediction_data["correct_scores"] = scores[:10]
-
-    prediction_data["best_bet"] = (
-        best_bet_recommendation(
-            prediction_data
         )
+
+    if not scores:
+        raise ValueError("PoissonResult.score_probabilities is empty.")
+
+    scores.sort(key=lambda item: item.probability, reverse=True)
+    return scores[:limit]
+
+
+def build_prediction_result(
+    home_team_id: int,
+    away_team_id: int,
+    league_id: int,
+    season_id: int,
+    home_expected_goals: float,
+    away_expected_goals: float,
+    model_result: PoissonResult,
+    model_name: str,
+    top_score_limit: int,
+) -> PredictionResult:
+    over_15 = get_market_probability(model_result.over_probabilities, 1.5)
+    under_15 = get_market_probability(model_result.under_probabilities, 1.5)
+    over_25 = get_market_probability(model_result.over_probabilities, 2.5)
+    under_25 = get_market_probability(model_result.under_probabilities, 2.5)
+    over_35 = get_market_probability(model_result.over_probabilities, 3.5)
+    under_35 = get_market_probability(model_result.under_probabilities, 3.5)
+
+    btts_yes = clamp_probability(model_result.btts_yes_probability)
+    btts_no = clamp_probability(model_result.btts_no_probability)
+
+    top_scores = get_top_score_predictions(
+        result=model_result,
+        limit=top_score_limit,
     )
 
-    return prediction_data
+    return PredictionResult(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        league_id=league_id,
+        season_id=season_id,
+        home_expected_goals=home_expected_goals,
+        away_expected_goals=away_expected_goals,
+        total_expected_goals=home_expected_goals + away_expected_goals,
+        home_win_probability=clamp_probability(model_result.home_win_probability),
+        draw_probability=clamp_probability(model_result.draw_probability),
+        away_win_probability=clamp_probability(model_result.away_win_probability),
+        over_15_probability=over_15,
+        under_15_probability=under_15,
+        over_25_probability=over_25,
+        under_25_probability=under_25,
+        over_35_probability=over_35,
+        under_35_probability=under_35,
+        btts_yes_probability=btts_yes,
+        btts_no_probability=btts_no,
+        fair_home_odds=fair_odds(model_result.home_win_probability),
+        fair_draw_odds=fair_odds(model_result.draw_probability),
+        fair_away_odds=fair_odds(model_result.away_win_probability),
+        fair_over_15_odds=fair_odds(over_15),
+        fair_under_15_odds=fair_odds(under_15),
+        fair_over_25_odds=fair_odds(over_25),
+        fair_under_25_odds=fair_odds(under_25),
+        fair_over_35_odds=fair_odds(over_35),
+        fair_under_35_odds=fair_odds(under_35),
+        fair_btts_yes_odds=fair_odds(btts_yes),
+        fair_btts_no_odds=fair_odds(btts_no),
+        most_likely_score=top_scores[0],
+        top_scores=top_scores,
+        model_name=model_name,
+    )
+
+
+def predict_match(
+    home_team_id: int,
+    away_team_id: int,
+    league_id: int,
+    season_id: int,
+    before_date: Optional[str] = None,
+    recent_matches: int = 5,
+    apply_form: bool = True,
+    use_dixon_coles: bool = False,
+    max_goals: int = 10,
+    top_score_limit: int = 5,
+) -> PredictionResult:
+    if home_team_id == away_team_id:
+        raise ValueError("Home and away teams must be different.")
+
+    connection = get_connection()
+
+    try:
+        expected_goals = get_expected_goals(
+            conn=connection,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+            league_id=league_id,
+            season_id=season_id,
+            before_date=before_date,
+            recent_matches=recent_matches,
+            apply_form=apply_form,
+        )
+    finally:
+        connection.close()
+
+    poisson_result = run_poisson_model(
+        home_expected_goals=expected_goals.home_expected_goals,
+        away_expected_goals=expected_goals.away_expected_goals,
+        max_goals=max_goals,
+    )
+
+    if use_dixon_coles:
+        adjusted = apply_dixon_coles(poisson_result)
+        model_result = adjusted.adjusted_result
+        model_name = "Dixon-Coles"
+    else:
+        model_result = poisson_result
+        model_name = "Pure Poisson"
+
+    return build_prediction_result(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        league_id=league_id,
+        season_id=season_id,
+        home_expected_goals=expected_goals.home_expected_goals,
+        away_expected_goals=expected_goals.away_expected_goals,
+        model_result=model_result,
+        model_name=model_name,
+        top_score_limit=top_score_limit,
+    )
+
+
+def print_prediction(result: PredictionResult) -> None:
+    print()
+    print("BETLAB AI MATCH PREDICTION")
+    print("=" * 60)
+    print(f"Model:                  {result.model_name}")
+
+    print()
+    print("EXPECTED GOALS")
+    print("-" * 60)
+    print(f"Home xG:                {result.home_expected_goals:.3f}")
+    print(f"Away xG:                {result.away_expected_goals:.3f}")
+    print(f"Total xG:               {result.total_expected_goals:.3f}")
+
+    print()
+    print("1X2 PROBABILITIES")
+    print("-" * 60)
+    print(
+        f"Home win:               {result.home_win_probability:.2%} "
+        f"(fair odds {result.fair_home_odds:.2f})"
+    )
+    print(
+        f"Draw:                   {result.draw_probability:.2%} "
+        f"(fair odds {result.fair_draw_odds:.2f})"
+    )
+    print(
+        f"Away win:               {result.away_win_probability:.2%} "
+        f"(fair odds {result.fair_away_odds:.2f})"
+    )
+
+    print()
+    print("GOALS MARKETS")
+    print("-" * 60)
+    print(
+        f"Over 1.5:               {result.over_15_probability:.2%} "
+        f"(fair odds {result.fair_over_15_odds:.2f})"
+    )
+    print(
+        f"Over 2.5:               {result.over_25_probability:.2%} "
+        f"(fair odds {result.fair_over_25_odds:.2f})"
+    )
+    print(
+        f"Over 3.5:               {result.over_35_probability:.2%} "
+        f"(fair odds {result.fair_over_35_odds:.2f})"
+    )
+    print(
+        f"BTTS Yes:               {result.btts_yes_probability:.2%} "
+        f"(fair odds {result.fair_btts_yes_odds:.2f})"
+    )
+
+    print()
+    print("MOST LIKELY SCORE")
+    print("-" * 60)
+    score = result.most_likely_score
+    print(
+        f"{score.home_goals}-{score.away_goals} "
+        f"({score.probability:.2%}, fair odds {score.fair_odds:.2f})"
+    )
+
+    print()
+    print("TOP SCORES")
+    print("-" * 60)
+
+    for index, score in enumerate(result.top_scores, start=1):
+        print(
+            f"{index}. {score.home_goals}-{score.away_goals}: "
+            f"{score.probability:.2%} "
+            f"(fair odds {score.fair_odds:.2f})"
+        )
+
+
+def main() -> None:
+    result = predict_match(
+        home_team_id=18,
+        away_team_id=3,
+        league_id=1,
+        season_id=1,
+        use_dixon_coles=True,
+    )
+
+    print_prediction(result)
+
+
+if __name__ == "__main__":
+    main()
