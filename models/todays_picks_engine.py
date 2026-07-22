@@ -7,7 +7,7 @@ from services.odds_api import (
     extract_totals_odds,
     get_live_odds,
 )
-
+from services.match_resolver import resolve_match
 
 TEAM_NAME_MAP = {
     "United States": "USA",
@@ -431,6 +431,10 @@ def get_todays_picks(
     include_passes=True,
 ):
     live_odds = get_live_odds()
+
+    print("LIVE ODDS FOUND:", len(live_odds))
+    print(live_odds)
+
     picks = []
 
     print(f"Processing {len(live_odds)} odds events")
@@ -444,8 +448,25 @@ def get_todays_picks(
 
         print(f"Checking: {home_team} vs {away_team}")
 
-        # Προσωρινά δεν καλούμε ακόμη το prediction engine,
-        # επειδή χρειάζεται database IDs και όχι ονόματα.
+        resolved = resolve_match(
+            home_team,
+            away_team,
+            event.get("sport_title"),
+            None,
+        )
+
+        if (
+            resolved["home_team_id"] is None
+            or resolved["away_team_id"] is None
+            or resolved["league_id"] is None
+            or resolved["season_id"] is None
+        ):
+            print(
+                f"Could not resolve database IDs: "
+                f"{home_team} vs {away_team}"
+            )
+            continue
+
         fixture = {
             "date": event.get("commence_time", ""),
             "league": event.get(
@@ -456,31 +477,57 @@ def get_todays_picks(
             "away_team": away_team,
         }
 
-        picks.append(
-            {
-                "date": fixture["date"],
-                "league": fixture["league"],
-                "match": f"{home_team} vs {away_team}",
-                "market": "PENDING MODEL",
-                "probability": 0.0,
-                "fair_odds": 0.0,
-                "confidence": 0.0,
-                "stars": 0,
-                "best_bookmaker": "N/A",
-                "best_odds": 0.0,
-                "value_percent": 0.0,
-                "expected_value_percent": 0.0,
-                "kelly_percent": 0.0,
-                "quarter_kelly_percent": 0.0,
-                "suggested_stake": 0.0,
-                "is_value": False,
-                "recommendation_status": "PASS",
-                "odds_available": bool(event.get("bookmakers")),
-                "explanation": [
-                    "ℹ️ Odds event loaded successfully.",
-                    "ℹ️ Waiting for team and league database mapping.",
-                ],
-            }
+        try:
+            prediction = predict_match(
+                home_team_id=resolved["home_team_id"],
+                away_team_id=resolved["away_team_id"],
+                league_id=resolved["league_id"],
+                season_id=resolved["season_id"],
+            )
+        except Exception as error:
+            print(
+                f"Prediction failed for "
+                f"{home_team} vs {away_team}: {error}"
+            )
+            continue
+
+        markets = scan_value_markets(
+            event,
+            prediction,
+            home_team,
+            away_team,
         )
+
+        if not markets:
+            if include_passes:
+                picks.append(
+                    build_pass_pick(
+                        fixture,
+                        prediction,
+                    )
+                )
+            continue
+
+        best = markets[0]
+
+        if best["is_value"]:
+            picks.append(
+                build_value_pick(
+                    fixture,
+                    prediction,
+                    best,
+                )
+            )
+        else:
+            picks.append(
+                build_no_value_pick(
+                    fixture,
+                    prediction,
+                    best,
+                )
+            )
+
+        if len(picks) >= limit:
+            break
 
     return picks[:limit]
