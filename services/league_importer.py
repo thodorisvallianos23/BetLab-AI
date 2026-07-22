@@ -1,6 +1,81 @@
 from database.connection import get_connection
 from services.football_api import get_competition_matches
+import re
+import unicodedata
 
+TEAM_SUFFIXES = {
+    "fc",
+    "cf",
+    "afc",
+    "ac",
+    "sc",
+    "ssc",
+}
+
+
+def normalize_team_key(team_name):
+    normalized = unicodedata.normalize(
+        "NFKD",
+        team_name,
+    )
+
+    normalized = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+
+    normalized = normalized.lower()
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+
+    words = normalized.split()
+
+    while words and words[-1] in TEAM_SUFFIXES:
+        words.pop()
+
+    return " ".join(words)
+
+
+def get_or_create_team(
+    cursor,
+    team_name,
+    country=None,
+    league_name=None,
+):
+    target_key = normalize_team_key(team_name)
+
+    cursor.execute(
+        """
+        SELECT id, team_name
+        FROM teams
+        """
+    )
+
+    for row in cursor.fetchall():
+        existing_key = normalize_team_key(
+            row["team_name"]
+        )
+
+        if existing_key == target_key:
+            return row["id"]
+
+    cursor.execute(
+        """
+        INSERT INTO teams (
+            team_name,
+            country,
+            league
+        )
+        VALUES (?, ?, ?)
+        """,
+        (
+            team_name,
+            country,
+            league_name,
+        ),
+    )
+
+    return cursor.lastrowid
 
 def get_or_create(
     cursor,
@@ -150,26 +225,18 @@ def import_league(
                 value=season_name,
             )
 
-            home_team_id = get_or_create(
-                cursor,
-                table="teams",
-                column="team_name",
-                value=home_team,
-                extra_columns={
-                    "country": country,
-                    "league": league_name,
-                },
+            home_team_id = get_or_create_team(
+                cursor=cursor,
+                team_name=home_team,
+                country=country,
+                league_name=league_name,
             )
 
-            away_team_id = get_or_create(
-                cursor,
-                table="teams",
-                column="team_name",
-                value=away_team,
-                extra_columns={
-                    "country": country,
-                    "league": league_name,
-                },
+            away_team_id = get_or_create_team(
+                cursor=cursor,
+                team_name=away_team,
+                country=country,
+                league_name=league_name,
             )
 
             if match_exists(

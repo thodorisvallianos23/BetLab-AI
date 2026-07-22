@@ -21,7 +21,9 @@ def get_team_id(team_name):
         return row["id"]
 
     return None
-    def get_league_id(league_name):
+
+
+def get_league_id(league_name):
     conn = get_connection()
     cursor = conn.cursor()
 
