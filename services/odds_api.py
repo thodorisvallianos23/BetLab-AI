@@ -4,10 +4,12 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
+
 
 SOCCER_SPORTS = [
     "soccer_argentina_primera_division",
@@ -51,53 +53,120 @@ SOCCER_SPORTS = [
 
 
 def get_live_odds():
-    if not ODDS_API_KEY:
-        print("❌ ODDS_API_KEY not found.")
-        return []
-
-    all_events = []
-
-    for sport in SOCCER_SPORTS:
-        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
-
-        params = {
-            "apiKey": ODDS_API_KEY,
-            "regions": "eu",
-            "markets": "h2h,totals",
-            "oddsFormat": "decimal",
+    return [
+        {
+            "id": "mock_1",
+            "sport_key": "soccer_epl",
+            "sport_title": "Premier League",
+            "commence_time": "2026-07-27T18:00:00Z",
+            "home_team": "Arsenal FC",
+            "away_team": "Liverpool FC",
+            "bookmakers": [
+                {
+                    "title": "Bet365",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {
+                                    "name": "Arsenal FC",
+                                    "price": 2.20,
+                                },
+                                {
+                                    "name": "Draw",
+                                    "price": 3.40,
+                                },
+                                {
+                                    "name": "Liverpool FC",
+                                    "price": 3.10,
+                                },
+                            ],
+                        },
+                        {
+                            "key": "totals",
+                            "outcomes": [
+                                {
+                                    "name": "Over",
+                                    "point": 2.5,
+                                    "price": 1.90,
+                                },
+                                {
+                                    "name": "Under",
+                                    "point": 2.5,
+                                    "price": 1.95,
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "title": "Novibet",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {
+                                    "name": "Arsenal FC",
+                                    "price": 2.25,
+                                },
+                                {
+                                    "name": "Draw",
+                                    "price": 3.35,
+                                },
+                                {
+                                    "name": "Liverpool FC",
+                                    "price": 3.05,
+                                },
+                            ],
+                        },
+                        {
+                            "key": "totals",
+                            "outcomes": [
+                                {
+                                    "name": "Over",
+                                    "point": 2.5,
+                                    "price": 1.92,
+                                },
+                                {
+                                    "name": "Under",
+                                    "point": 2.5,
+                                    "price": 1.93,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
         }
-
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                timeout=15,
-            )
-        except requests.RequestException:
-            continue
-
-        if response.status_code != 200:
-            continue
-
-        events = response.json()
-
-        if events:
-            print(f"✅ {sport}: {len(events)} events")
-
-        all_events.extend(events)
-
-    print(f"\n📊 Total football events loaded: {len(all_events)}")
-
-    return all_events
-
+    ]
 
 def get_mock_bookmaker_odds(match_name, market):
     return [
-        {"bookmaker": "Bet365", "market": market, "odds": 1.95},
-        {"bookmaker": "Stoiximan", "market": market, "odds": 1.88},
-        {"bookmaker": "Novibet", "market": market, "odds": 1.92},
-        {"bookmaker": "Betsson", "market": market, "odds": 1.90},
-        {"bookmaker": "Fonbet", "market": market, "odds": 1.86},
+        {
+            "bookmaker": "Bet365",
+            "market": market,
+            "odds": 1.95,
+        },
+        {
+            "bookmaker": "Stoiximan",
+            "market": market,
+            "odds": 1.88,
+        },
+        {
+            "bookmaker": "Novibet",
+            "market": market,
+            "odds": 1.92,
+        },
+        {
+            "bookmaker": "Betsson",
+            "market": market,
+            "odds": 1.90,
+        },
+        {
+            "bookmaker": "Fonbet",
+            "market": market,
+            "odds": 1.86,
+        },
     ]
 
 
@@ -118,15 +187,26 @@ def extract_match_odds(event, selection):
                             "bookmaker": title,
                             "market": "Match Result",
                             "selection": selection,
-                            "odds": outcome.get("price", 0),
+                            "odds": outcome.get(
+                                "price",
+                                0,
+                            ),
                         }
                     )
 
-    rows.sort(key=lambda x: x["odds"], reverse=True)
+    rows.sort(
+        key=lambda item: item["odds"],
+        reverse=True,
+    )
+
     return rows
 
 
-def extract_totals_odds(event, point=2.5, outcome_name="Over"):
+def extract_totals_odds(
+    event,
+    point=2.5,
+    outcome_name="Over",
+):
     rows = []
 
     for bookmaker in event.get("bookmakers", []):
@@ -137,25 +217,46 @@ def extract_totals_odds(event, point=2.5, outcome_name="Over"):
                 continue
 
             for outcome in market.get("outcomes", []):
+                outcome_point = float(
+                    outcome.get("point", 0)
+                )
+
                 if (
                     outcome.get("name") == outcome_name
-                    and float(outcome.get("point", 0)) == float(point)
+                    and outcome_point == float(point)
                 ):
                     rows.append(
                         {
                             "bookmaker": title,
-                            "market": f"{outcome_name} {point}",
+                            "market": (
+                                f"{outcome_name} {point}"
+                            ),
                             "selection": outcome_name,
-                            "odds": outcome.get("price", 0),
+                            "odds": outcome.get(
+                                "price",
+                                0,
+                            ),
                         }
                     )
 
-    rows.sort(key=lambda x: x["odds"], reverse=True)
+    rows.sort(
+        key=lambda item: item["odds"],
+        reverse=True,
+    )
+
     return rows
 
 
-def compare_odds_with_model(model_probability, bookmaker_odds):
-    fair_odds = 1 / model_probability if model_probability > 0 else 0
+def compare_odds_with_model(
+    model_probability,
+    bookmaker_odds,
+):
+    fair_odds = (
+        1 / model_probability
+        if model_probability > 0
+        else 0
+    )
+
     rows = []
 
     for item in bookmaker_odds:
@@ -185,24 +286,41 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
         else:
             kelly_fraction = 0
 
-        kelly_fraction = max(0, kelly_fraction)
+        kelly_fraction = max(
+            0,
+            kelly_fraction,
+        )
 
         rows.append(
             {
                 "bookmaker": item["bookmaker"],
                 "market": item["market"],
-                "selection": item.get("selection", ""),
+                "selection": item.get(
+                    "selection",
+                    "",
+                ),
                 "odds": odds,
                 "fair_odds": fair_odds,
-                "implied_probability": implied_probability,
+                "implied_probability": (
+                    implied_probability
+                ),
                 "edge": edge,
                 "value_percent": edge * 100,
                 "expected_value": expected_value,
-                "expected_value_percent": expected_value * 100,
+                "expected_value_percent": (
+                    expected_value * 100
+                ),
                 "kelly_fraction": kelly_fraction,
-                "kelly_percent": kelly_fraction * 100,
-                "quarter_kelly_percent": kelly_fraction * 25,
-                "is_value": edge > 0.03 and expected_value > 0,
+                "kelly_percent": (
+                    kelly_fraction * 100
+                ),
+                "quarter_kelly_percent": (
+                    kelly_fraction * 25
+                ),
+                "is_value": (
+                    edge > 0.03
+                    and expected_value > 0
+                ),
             }
         )
 
@@ -210,25 +328,52 @@ def compare_odds_with_model(model_probability, bookmaker_odds):
         key=lambda item: item["expected_value"],
         reverse=True,
     )
+
+    return rows
+
+
 def list_available_sports():
+    if not ODDS_API_KEY:
+        print("❌ ODDS_API_KEY not found.")
+        return []
+
     url = "https://api.the-odds-api.com/v4/sports"
 
-    response = requests.get(
-        url,
-        params={"apiKey": ODDS_API_KEY},
-        timeout=15,
-    )
+    try:
+        response = requests.get(
+            url,
+            params={"apiKey": ODDS_API_KEY},
+            timeout=15,
+        )
+    except requests.RequestException as error:
+        print(f"❌ Sports request failed: {error}")
+        return []
 
     print("Sports Status:", response.status_code)
 
-    data = response.json()
+    if response.status_code != 200:
+        print(
+            f"⚠️ HTTP {response.status_code}"
+        )
+        print(
+            "API RESPONSE:",
+            response.text,
+        )
+        return []
+
+    try:
+        data = response.json()
+    except ValueError:
+        print("❌ Invalid JSON response.")
+        return []
 
     for sport in data:
         print(
-            sport["key"],
+            sport.get("key"),
             "|",
-            sport["title"],
+            sport.get("title"),
             "| active:",
-            sport["active"],
+            sport.get("active"),
         )
+
     return data

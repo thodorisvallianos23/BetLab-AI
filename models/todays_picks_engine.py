@@ -1,12 +1,13 @@
 from database.bankroll import calculate_suggested_stake
 from models.prediction_engine import predict_match
-from services.football_api import get_today_fixtures
 from services.odds_api import (
     compare_odds_with_model,
     extract_match_odds,
     extract_totals_odds,
     get_live_odds,
 )
+from dataclasses import asdict
+
 from services.match_resolver import resolve_match
 
 TEAM_NAME_MAP = {
@@ -14,6 +15,10 @@ TEAM_NAME_MAP = {
     "Bosnia-Herzegovina": "Bosnia and Herzegovina",
     "Cape Verde Islands": "Cape Verde",
 }
+
+
+# Temporary model season used while live 2026/27 data is unavailable.
+MODEL_SEASON_NAME = "2025/26"
 
 
 MARKET_CONFIG = [
@@ -66,16 +71,13 @@ def explain_pick(prediction, recommendation_status, market=None):
         )
         return reasons
 
-    if prediction["confidence"] >= 65:
+    if prediction.get("confidence", 0.0) >= 65:
         reasons.append("✅ Strong AI confidence")
 
-    if prediction["total_xg"] >= 2.7:
+    if prediction.get("total_xg", 0.0) >= 2.7:
         reasons.append("✅ High projected total xG")
 
-    if prediction["home_form"] >= 65:
-        reasons.append("✅ Home team is in good form")
-
-    if prediction["btts"] >= 0.55:
+    if prediction.get("btts", 0.0) >= 0.55:
         reasons.append("✅ Both teams likely to score")
 
     if market:
@@ -425,18 +427,77 @@ def build_value_pick(
         ),
     }
 
+def prediction_to_dict(prediction_result):
+    """
+    Convert PredictionResult into the legacy dictionary keys used by
+    the Today's Picks market scanner and dashboard.
+    """
+    prediction = asdict(prediction_result)
+
+    strongest_probability = max(
+        prediction["home_win_probability"],
+        prediction["draw_probability"],
+        prediction["away_win_probability"],
+        prediction["over_15_probability"],
+        prediction["over_25_probability"],
+        prediction["over_35_probability"],
+        prediction["btts_yes_probability"],
+    )
+
+    confidence = strongest_probability * 100
+    stars = max(1, min(5, round(confidence / 20)))
+
+    prediction.update(
+        {
+            "home_xg": prediction["home_expected_goals"],
+            "away_xg": prediction["away_expected_goals"],
+            "total_xg": prediction["total_expected_goals"],
+
+            "home_win": prediction["home_win_probability"],
+            "draw": prediction["draw_probability"],
+            "away_win": prediction["away_win_probability"],
+
+            "over_15": prediction["over_15_probability"],
+            "under_15": prediction["under_15_probability"],
+            "over_25": prediction["over_25_probability"],
+            "under_25": prediction["under_25_probability"],
+            "over_35": prediction["over_35_probability"],
+            "under_35": prediction["under_35_probability"],
+
+            "btts": prediction["btts_yes_probability"],
+            "btts_yes": prediction["btts_yes_probability"],
+            "btts_no": prediction["btts_no_probability"],
+
+            "fair_home_win": prediction["fair_home_odds"],
+            "fair_draw": prediction["fair_draw_odds"],
+            "fair_away_win": prediction["fair_away_odds"],
+
+            "fair_o15": prediction["fair_over_15_odds"],
+            "fair_u15": prediction["fair_under_15_odds"],
+            "fair_o25": prediction["fair_over_25_odds"],
+            "fair_u25": prediction["fair_under_25_odds"],
+            "fair_o35": prediction["fair_over_35_odds"],
+            "fair_u35": prediction["fair_under_35_odds"],
+
+            "fair_btts_yes": prediction["fair_btts_yes_odds"],
+            "fair_btts_no": prediction["fair_btts_no_odds"],
+
+            "confidence": confidence,
+            "stars": stars,
+        }
+    )
+
+    return prediction
+
 
 def get_todays_picks(
     limit=10,
     include_passes=True,
 ):
     live_odds = get_live_odds()
-
-    print("LIVE ODDS FOUND:", len(live_odds))
-    print(live_odds)
-
     picks = []
 
+    print(f"LIVE ODDS FOUND: {len(live_odds)}")
     print(f"Processing {len(live_odds)} odds events")
 
     for event in live_odds:
@@ -452,17 +513,22 @@ def get_todays_picks(
             home_team,
             away_team,
             event.get("sport_title"),
-            None,
+            MODEL_SEASON_NAME,
         )
 
-        if (
-            resolved["home_team_id"] is None
-            or resolved["away_team_id"] is None
-            or resolved["league_id"] is None
-            or resolved["season_id"] is None
+        print("RESOLVED:", resolved)
+
+        if any(
+            resolved[key] is None
+            for key in (
+                "home_team_id",
+                "away_team_id",
+                "league_id",
+                "season_id",
+            )
         ):
             print(
-                f"Could not resolve database IDs: "
+                "Could not resolve database IDs: "
                 f"{home_team} vs {away_team}"
             )
             continue
@@ -478,15 +544,16 @@ def get_todays_picks(
         }
 
         try:
-            prediction = predict_match(
+            prediction_result = predict_match(
                 home_team_id=resolved["home_team_id"],
                 away_team_id=resolved["away_team_id"],
                 league_id=resolved["league_id"],
                 season_id=resolved["season_id"],
             )
+            prediction = prediction_to_dict(prediction_result)
         except Exception as error:
             print(
-                f"Prediction failed for "
+                "Prediction failed for "
                 f"{home_team} vs {away_team}: {error}"
             )
             continue
@@ -506,6 +573,10 @@ def get_todays_picks(
                         prediction,
                     )
                 )
+
+            if len(picks) >= limit:
+                break
+
             continue
 
         best = markets[0]
