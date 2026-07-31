@@ -1,8 +1,8 @@
-from database.connection import get_connection
-
-
 import re
 import unicodedata
+
+from database.connection import get_connection
+
 
 TEAM_SUFFIXES = {
     "fc",
@@ -27,6 +27,7 @@ def normalize_team_key(team_name):
     )
 
     normalized = normalized.lower()
+
     normalized = re.sub(
         r"[^a-z0-9\s]",
         " ",
@@ -43,7 +44,7 @@ def normalize_team_key(team_name):
 
 def get_team_id(team_name):
     target_key = normalize_team_key(team_name)
-    
+
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -56,7 +57,11 @@ def get_team_id(team_name):
         )
 
         for row in cursor.fetchall():
-            if normalize_team_key(row["team_name"]) == target_key:
+            database_key = normalize_team_key(
+                row["team_name"]
+            )
+
+            if database_key == target_key:
                 return row["id"]
 
         return None
@@ -66,44 +71,91 @@ def get_team_id(team_name):
 
 
 def get_league_id(league_name):
-    conn = get_connection()
-    cursor = conn.cursor()
+    connection = get_connection()
+    cursor = connection.cursor()
 
-    cursor.execute(
-        """
-        SELECT id
-        FROM leagues
-        WHERE LOWER(league_name) = LOWER(?)
-        """,
-        (league_name,),
-    )
+    try:
+        cursor.execute(
+            """
+            SELECT id
+            FROM leagues
+            WHERE LOWER(league_name) = LOWER(?)
+            """,
+            (league_name,),
+        )
 
-    row = cursor.fetchone()
-    conn.close()
+        row = cursor.fetchone()
 
-    if row:
-        return row["id"]
+        if row:
+            return row["id"]
 
-    return None
+        return None
+
+    finally:
+        connection.close()
 
 
 def get_season_id(season_name):
-    conn = get_connection()
-    cursor = conn.cursor()
+    if not season_name:
+        return None
 
-    cursor.execute(
-        """
-        SELECT id
-        FROM seasons
-        WHERE LOWER(season_name) = LOWER(?)
-        """,
-        (season_name,),
-    )
+    connection = get_connection()
+    cursor = connection.cursor()
 
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor.execute(
+            """
+            SELECT id
+            FROM seasons
+            WHERE LOWER(season_name) = LOWER(?)
+            """,
+            (season_name,),
+        )
 
-    if row:
-        return row["id"]
+        row = cursor.fetchone()
 
-    return None
+        if row:
+            return row["id"]
+
+        return None
+
+    finally:
+        connection.close()
+
+
+def get_latest_finished_season_name(league_id):
+    if league_id is None:
+        return None
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT s.season_name
+            FROM matches AS m
+            JOIN seasons AS s
+                ON s.id = m.season_id
+            WHERE m.league_id = ?
+              AND LOWER(m.status) = 'finished'
+            GROUP BY
+                s.id,
+                s.season_name
+            ORDER BY
+                MAX(m.match_date) DESC,
+                s.id DESC
+            LIMIT 1
+            """,
+            (league_id,),
+        )
+
+        row = cursor.fetchone()
+
+        if row:
+            return row["season_name"]
+
+        return None
+
+    finally:
+        connection.close()

@@ -18,7 +18,7 @@ TEAM_NAME_MAP = {
 
 
 # Temporary model season used while live 2026/27 data is unavailable.
-MODEL_SEASON_NAME = "2025/26"
+
 
 
 MARKET_CONFIG = [
@@ -497,9 +497,6 @@ def get_todays_picks(
     live_odds = get_live_odds()
     picks = []
 
-    print(f"LIVE ODDS FOUND: {len(live_odds)}")
-    print(f"Processing {len(live_odds)} odds events")
-
     for event in live_odds:
         home_team = event.get("home_team")
         away_team = event.get("away_team")
@@ -507,16 +504,13 @@ def get_todays_picks(
         if not home_team or not away_team:
             continue
 
-        print(f"Checking: {home_team} vs {away_team}")
 
         resolved = resolve_match(
             home_team,
             away_team,
             event.get("sport_title"),
-            MODEL_SEASON_NAME,
+            None,
         )
-
-        print("RESOLVED:", resolved)
 
         if any(
             resolved[key] is None

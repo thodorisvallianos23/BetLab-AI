@@ -153,26 +153,56 @@ def get_expected_goals(
         recent_matches=recent_matches,
     )
 
+        # Shrink ακραίες επιθετικές/αμυντικές αξιολογήσεις προς το 1.0.
+    # Μειώνει την υπερβολική επίδραση μικρών δειγμάτων.
+    rating_shrinkage = 0.35
+
+    home_attack = 1.0 + (
+        home_ratings.home_attack_strength - 1.0
+    ) * rating_shrinkage
+
+    home_defence = 1.0 + (
+        home_ratings.home_defence_strength - 1.0
+    ) * rating_shrinkage
+
+    away_attack = 1.0 + (
+        away_ratings.away_attack_strength - 1.0
+    ) * rating_shrinkage
+
+    away_defence = 1.0 + (
+        away_ratings.away_defence_strength - 1.0
+    ) * rating_shrinkage
+
     home_base_xg = (
         league.home_goals_per_match
-        * home_ratings.home_attack_strength
-        * away_ratings.away_defence_strength
+        * home_attack
+        * away_defence
     )
 
     away_base_xg = (
         league.away_goals_per_match
-        * away_ratings.away_attack_strength
-        * home_ratings.home_defence_strength
+        * away_attack
+        * home_defence
     )
 
     if apply_form:
-        home_form = form_multiplier(
+        raw_home_form = form_multiplier(
             home_ratings.recent_form_score
         )
-
-        away_form = form_multiplier(
+        raw_away_form = form_multiplier(
             away_ratings.recent_form_score
         )
+
+        # Η φόρμα εφαρμόζεται πιο ήπια.
+        form_shrinkage = 0.50
+
+        home_form = 1.0 + (
+            raw_home_form - 1.0
+        ) * form_shrinkage
+
+        away_form = 1.0 + (
+            raw_away_form - 1.0
+        ) * form_shrinkage
     else:
         home_form = 1.0
         away_form = 1.0
