@@ -1,21 +1,37 @@
 import streamlit as st
 
 
-def render_analyzer_controls(teams):
+def render_analyzer_controls(teams, leagues):
     st.subheader("🔍 Analyzer Setup")
 
-    col1, col2, col3 = st.columns(3)
+    league_col, home_col, away_col, market_col = st.columns(4)
 
-    with col1:
-        home_team = st.selectbox("Home Team", teams)
+    with league_col:
+        selected_league = st.selectbox(
+            "League",
+            leagues,
+        )
 
-    with col2:
-        away_team = st.selectbox("Away Team", teams)
+    with home_col:
+        home_team = st.selectbox(
+            "Home Team",
+            teams,
+        )
 
-    with col3:
+    with away_col:
+        away_team = st.selectbox(
+            "Away Team",
+            teams,
+        )
+
+    with market_col:
         selected_market = st.selectbox(
             "Market",
-            ["Match Result", "Over Goals", "BTTS"],
+            [
+                "Match Result",
+                "Over Goals",
+                "BTTS",
+            ],
         )
 
     if selected_market == "Match Result":
@@ -41,13 +57,54 @@ def render_analyzer_controls(teams):
     b1, b2, b3, b4, b5 = st.columns(5)
 
     bookmakers = {
-        "Bet365": b1.number_input(f"Bet365 {suffix}", 1.01, 100.0, default_odds, 0.01),
-        "Stoiximan": b2.number_input(f"Stoiximan {suffix}", 1.01, 100.0, default_odds, 0.01),
-        "Novibet": b3.number_input(f"Novibet {suffix}", 1.01, 100.0, default_odds, 0.01),
-        "Betsson": b4.number_input(f"Betsson {suffix}", 1.01, 100.0, default_odds, 0.01),
-        "Fonbet": b5.number_input(f"Fonbet {suffix}", 1.01, 100.0, default_odds, 0.01),
+        "Bet365": b1.number_input(
+            f"Bet365 {suffix}",
+            min_value=1.01,
+            max_value=100.0,
+            value=default_odds,
+            step=0.01,
+        ),
+        "Stoiximan": b2.number_input(
+            f"Stoiximan {suffix}",
+            min_value=1.01,
+            max_value=100.0,
+            value=default_odds,
+            step=0.01,
+        ),
+        "Novibet": b3.number_input(
+            f"Novibet {suffix}",
+            min_value=1.01,
+            max_value=100.0,
+            value=default_odds,
+            step=0.01,
+        ),
+        "Betsson": b4.number_input(
+            f"Betsson {suffix}",
+            min_value=1.01,
+            max_value=100.0,
+            value=default_odds,
+            step=0.01,
+        ),
+        "Fonbet": b5.number_input(
+            f"Fonbet {suffix}",
+            min_value=1.01,
+            max_value=100.0,
+            value=default_odds,
+            step=0.01,
+        ),
     }
 
-    predict_button = st.button("🔮 Predict Match")
+    predict_button = st.button(
+        "🔮 Predict Match",
+        type="primary",
+    )
 
-    return home_team, away_team, selected_market, market_label, bookmakers, predict_button
+    return (
+        selected_league,
+        home_team,
+        away_team,
+        selected_market,
+        market_label,
+        bookmakers,
+        predict_button,
+    )
